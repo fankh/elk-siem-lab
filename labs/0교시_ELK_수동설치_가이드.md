@@ -466,6 +466,15 @@ logging.level: info
 EOF
 ```
 
+### 설정 파일 권한 수정
+
+> **주의**: Filebeat는 설정 파일이 소유자만 쓸 수 있어야 합니다. `cat >` 등으로 생성하면 기본 `-rwxrwxrwx` 권한이 되어 에러가 발생합니다.
+
+```bash
+# 설정 파일 권한 수정 (소유자만 쓰기 가능하도록)
+chmod go-w /etc/filebeat/filebeat.yml
+```
+
 ### 설정 테스트
 
 ```bash
