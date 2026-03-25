@@ -166,6 +166,7 @@ EOF
 chown -R elasticsearch:elasticsearch /etc/elasticsearch
 chown -R elasticsearch:elasticsearch /var/lib/elasticsearch
 chown -R elasticsearch:elasticsearch /var/log/elasticsearch
+chown -R elasticsearch:elasticsearch /usr/share/elasticsearch
 
 # 서비스 시작 — elasticsearch 사용자로 실행 (root로 실행 시 에러 발생)
 su -s /bin/bash elasticsearch -c '/usr/share/elasticsearch/bin/elasticsearch -d -p /tmp/es.pid'
@@ -179,7 +180,9 @@ curl -s http://localhost:9200/_cluster/health?pretty
 # 기대: status: "green" (데이터 없으므로 green)
 ```
 
-> **트러블슈팅**: `can not run elasticsearch as root` 에러가 발생하면 위의 `su -s /bin/bash elasticsearch -c '...'` 명령으로 실행하세요.
+> **트러블슈팅**:
+> - `can not run elasticsearch as root` → 위의 `su -s /bin/bash elasticsearch -c '...'` 명령으로 실행
+> - `Permission denied: gc.log` → `chown -R elasticsearch:elasticsearch /usr/share/elasticsearch` 실행 후 재시도
 
 ### 확인 포인트
 - [ ] `curl localhost:9200` → JSON 응답
@@ -613,7 +616,7 @@ docker stop elk-manual && docker rm elk-manual
 | Java 설치 | `apt install openjdk-17-jdk-headless` | root | `java -version` |
 | APT 저장소 | `echo "deb ..." > /etc/apt/sources.list.d/elastic-8.x.list` | root | `apt-cache search elastic` |
 | ES 설치 | `apt install elasticsearch` | root | `/usr/share/elasticsearch/bin/elasticsearch --version` |
-| ES 소유권 | `chown -R elasticsearch:elasticsearch /etc/elasticsearch /var/lib/elasticsearch /var/log/elasticsearch` | root | - |
+| ES 소유권 | `chown -R elasticsearch:elasticsearch /etc/elasticsearch /var/lib/elasticsearch /var/log/elasticsearch /usr/share/elasticsearch` | root | - |
 | ES 시작 | `su -s /bin/bash elasticsearch -c '...elasticsearch -d -p /tmp/es.pid'` | **elasticsearch** | `curl localhost:9200` |
 | ES 설정 | `/etc/elasticsearch/elasticsearch.yml` | root (편집) | `cluster.name`, `discovery.type` |
 | Kibana 설치 | `apt install kibana` | root | `/usr/share/kibana/bin/kibana --version` |
