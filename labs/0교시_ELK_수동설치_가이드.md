@@ -198,7 +198,13 @@ chown -R elasticsearch:elasticsearch /var/log/elasticsearch
 # 서비스 시작 — elasticsearch 사용자로 실행 (root로 실행 시 에러 발생)
 su -s /bin/bash elasticsearch -c '/usr/share/elasticsearch/bin/elasticsearch -d -p /tmp/es.pid'
 
-# ~30초 대기 후 확인
+# ~30초 대기 — 아래와 같은 로그가 출력되면 정상 시작 중:
+# [INFO ][o.e.p.PluginsService] [node-1] loaded module [x-pack-security]
+# [INFO ][o.e.p.PluginsService] [node-1] loaded module [lang-expression]
+# [INFO ][o.e.p.PluginsService] [node-1] loaded module [x-pack-eql]
+# ... (다수의 "loaded module" 메시지가 출력됩니다)
+
+# 확인
 curl -s http://localhost:9200?pretty
 # 기대: cluster_name: "siem-lab-manual", version.number: "8.x.x"
 
@@ -211,6 +217,7 @@ curl -s http://localhost:9200/_cluster/health?pretty
 > - `can not run elasticsearch as root` → 위의 `su -s /bin/bash elasticsearch -c '...'` 명령으로 실행
 > - `Permission denied: gc.log` → `chown -R elasticsearch:elasticsearch /usr/share/elasticsearch` 실행 후 재시도
 > - `xpack.security.transport.ssl` 관련 에러 → 위의 "SSL 키스토어 초기화" 단계 수행 후 재시도
+> - `failed to obtain node locks` → 이미 Elasticsearch가 실행 중입니다. `curl localhost:9200`으로 확인하거나, `kill $(cat /tmp/es.pid)` 후 재시작
 
 ### 확인 포인트
 - [ ] `curl localhost:9200` → JSON 응답
