@@ -1,0 +1,34 @@
+filebeat.inputs:
+  - type: log
+    enabled: true
+    paths:
+      - /var/log/sample/web-access.log
+    tags: ["web", "access"]
+    fields:
+      log_type: web-access
+
+  - type: log
+    enabled: true
+    paths:
+      - /var/log/sample/sysmon.json
+    tags: ["sysmon", "endpoint"]
+    json.keys_under_root: true
+    json.add_error_key: true
+    fields:
+      log_type: sysmon
+
+  - type: log
+    enabled: true
+    paths:
+      - /var/log/sample/suricata-eve.json
+    tags: ["suricata", "ids"]
+    json.keys_under_root: true
+    json.add_error_key: true
+    fields:
+      log_type: suricata
+
+output.logstash:
+  hosts: ["logstash:5044"]
+
+logging.level: info
+logging.to_stderr: true

@@ -1,0 +1,25 @@
+title: Brute-force Login Detection
+id: a1b2c3d4-0003-4000-8000-000000000003
+status: experimental
+description: Detects brute-force login attempts by counting 401 responses from same IP
+author: SIEM Lab
+date: 2026/03/26
+logsource:
+    category: webserver
+    product: apache
+detection:
+    selection:
+        cs-uri|contains:
+            - "/login"
+            - "/auth"
+            - "/api/token"
+            - "/signin"
+        sc-status: 401
+    condition: selection
+level: high
+falsepositives:
+    - Misconfigured applications
+    - Automated health checks with wrong credentials
+tags:
+    - attack.credential_access
+    - attack.t1110

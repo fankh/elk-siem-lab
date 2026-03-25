@@ -1,0 +1,553 @@
+# 실습 0-B: ELK Stack 수동 설치 (Plain Linux)
+
+> **목표**: Plain Linux 컨테이너에서 ELK 각 컴포넌트를 직접 설치하고 설정하여 동작 원리를 이해합니다.
+
+---
+
+## 왜 수동 설치를 배우는가?
+
+| 항목 | docker-compose (본 실습) | 수동 설치 (본 가이드) |
+|------|:----------------------:|:-------------------:|
+| 설치 난이도 | 낮음 (1줄 명령) | 높음 (패키지별 설정) |
+| 운영 이해도 | 낮음 (블랙박스) | **높음** (내부 구조 파악) |
+| 실무 적용 | POC, 개발 환경 | **운영 서버, 커스텀 설정** |
+| 트러블슈팅 | 제한적 | **깊이 있는 디버깅** |
+
+> 실무에서는 Docker가 아닌 **베어메탈/VM에 직접 설치**하는 경우가 많습니다. 각 컴포넌트의 설정 파일 위치, 서비스 관리, 포트 설정을 직접 경험합니다.
+
+---
+
+## 실습 환경
+
+> **주의**: 이 가이드는 docker-compose와 **별도로** 실행합니다. 독립적인 Ubuntu 컨테이너에서 ELK를 직접 설치합니다.
+
+### 컨테이너 시작
+
+```bash
+# 호스트에서 실행 — Plain Ubuntu 컨테이너 생성
+docker run -d --name elk-manual -p 19200:9200 -p 15601:5601 -p 15044:5044 --memory=4g ubuntu:22.04 tail -f /dev/null
+```
+
+### 컨테이너 접속
+
+```bash
+# 호스트에서 실행 — 컨테이너 내부로 접속
+docker exec -it elk-manual bash
+```
+
+> 이후 모든 명령은 **elk-manual 컨테이너 내부**에서 실행합니다.
+> **포트**: 기존 ELK(9200/5601)과 충돌 방지를 위해 19200, 15601, 15044 사용
+
+---
+
+## Step 1: 기본 패키지 설치
+
+```bash
+# 패키지 업데이트
+apt-get update && apt-get install -y \
+  curl \
+  wget \
+  gnupg \
+  apt-transport-https \
+  openjdk-17-jdk-headless \
+  jq
+
+# Java 확인
+java -version
+# 기대: openjdk version "17.x.x"
+```
+
+### Java가 필요한 이유
+
+| 컴포넌트 | Java 필요 | 이유 |
+|---------|:---------:|------|
+| Elasticsearch | O | Java 기반 (Lucene 검색 엔진) |
+| Logstash | O | JRuby 기반 파이프라인 엔진 |
+| Kibana | X | Node.js 기반 |
+| Filebeat | X | Go 기반 바이너리 |
+
+---
+
+## Step 2: Elastic APT 저장소 등록
+
+```bash
+# Elastic GPG 키 추가
+wget -qO - https://artifacts.elastic.co/GPG-KEY-elasticsearch | \
+  gpg --dearmor -o /usr/share/keyrings/elastic-keyring.gpg
+
+# APT 저장소 추가
+echo "deb [signed-by=/usr/share/keyrings/elastic-keyring.gpg] https://artifacts.elastic.co/packages/8.x/apt stable main" | \
+  tee /etc/apt/sources.list.d/elastic-8.x.list
+
+# 패키지 목록 갱신
+apt-get update
+```
+
+### APT 저장소에서 설치 가능한 패키지
+
+```bash
+apt-cache search elastic
+# elasticsearch - Distributed RESTful search engine
+# kibana - Explore and visualize your data
+# logstash - Server-side data processing pipeline
+# filebeat - Lightweight shipper for log data
+# metricbeat - Lightweight shipper for metrics
+# packetbeat - Lightweight shipper for network data
+# auditbeat - Lightweight shipper for audit data
+```
+
+---
+
+## Step 3: Elasticsearch 설치
+
+```bash
+# 설치
+apt-get install -y elasticsearch
+
+# 버전 확인
+/usr/share/elasticsearch/bin/elasticsearch --version
+# 기대: Version: 8.x.x
+```
+
+### 주요 파일 위치
+
+| 경로 | 용도 |
+|------|------|
+| `/etc/elasticsearch/elasticsearch.yml` | **메인 설정 파일** |
+| `/etc/elasticsearch/jvm.options` | JVM 힙 메모리 설정 |
+| `/var/lib/elasticsearch/` | 데이터 저장 디렉토리 |
+| `/var/log/elasticsearch/` | 로그 디렉토리 |
+| `/usr/share/elasticsearch/bin/` | 실행 바이너리 |
+
+### 설정 파일 수정
+
+```bash
+# elasticsearch.yml 수정
+cat > /etc/elasticsearch/elasticsearch.yml << 'EOF'
+# 클러스터 이름
+cluster.name: siem-lab-manual
+
+# 노드 이름
+node.name: node-1
+
+# 네트워크 바인딩 (외부 접근 허용)
+network.host: 0.0.0.0
+
+# 단일 노드 모드
+discovery.type: single-node
+
+# 보안 비활성화 (실습용)
+xpack.security.enabled: false
+xpack.security.enrollment.enabled: false
+
+# HTTP 포트
+http.port: 9200
+EOF
+```
+
+### JVM 메모리 설정
+
+```bash
+# jvm.options 수정 (컨테이너 메모리에 맞게)
+cat > /etc/elasticsearch/jvm.options.d/heap.options << 'EOF'
+-Xms1g
+-Xmx1g
+EOF
+```
+
+> **규칙**: Xms와 Xmx는 반드시 동일하게 설정. 전체 메모리의 50% 이하 권장.
+
+### 시작 및 확인
+
+```bash
+# 서비스 시작 (컨테이너에서는 직접 실행)
+/usr/share/elasticsearch/bin/elasticsearch -d -p /tmp/es.pid
+
+# ~30초 대기 후 확인
+curl -s http://localhost:9200?pretty
+# 기대: cluster_name: "siem-lab-manual", version.number: "8.x.x"
+
+# 클러스터 상태
+curl -s http://localhost:9200/_cluster/health?pretty
+# 기대: status: "green" (데이터 없으므로 green)
+```
+
+### 확인 포인트
+- [ ] `curl localhost:9200` → JSON 응답
+- [ ] `status: green`
+- [ ] `cluster_name: siem-lab-manual`
+
+---
+
+## Step 4: Kibana 설치
+
+```bash
+# 설치
+apt-get install -y kibana
+
+# 버전 확인
+/usr/share/kibana/bin/kibana --version
+```
+
+### 주요 파일 위치
+
+| 경로 | 용도 |
+|------|------|
+| `/etc/kibana/kibana.yml` | **메인 설정 파일** |
+| `/usr/share/kibana/bin/` | 실행 바이너리 |
+| `/var/log/kibana/` | 로그 디렉토리 |
+
+### 설정 파일 수정
+
+```bash
+cat > /etc/kibana/kibana.yml << 'EOF'
+# Kibana 서버 포트
+server.port: 5601
+
+# 외부 접근 허용
+server.host: "0.0.0.0"
+
+# Elasticsearch 연결
+elasticsearch.hosts: ["http://localhost:9200"]
+
+# 보안 비활성화
+xpack.security.enabled: false
+EOF
+```
+
+### 시작 및 확인
+
+```bash
+# 서비스 시작 (백그라운드)
+/usr/share/kibana/bin/kibana --allow-root &
+
+# ~60초 대기 후 확인
+curl -s http://localhost:5601/api/status | jq '.status.overall.level'
+# 기대: "available"
+```
+
+> **브라우저 접속**: http://localhost:15601 (호스트에서 접근 시 매핑된 포트)
+
+### 확인 포인트
+- [ ] `curl localhost:5601/api/status` → "available"
+- [ ] 브라우저에서 Kibana UI 접근 가능
+
+---
+
+## Step 5: Logstash 설치
+
+```bash
+# 설치
+apt-get install -y logstash
+
+# 버전 확인
+/usr/share/logstash/bin/logstash --version
+```
+
+### 주요 파일 위치
+
+| 경로 | 용도 |
+|------|------|
+| `/etc/logstash/logstash.yml` | **메인 설정 파일** |
+| `/etc/logstash/pipelines.yml` | 파이프라인 정의 |
+| `/etc/logstash/conf.d/` | **파이프라인 conf 파일 디렉토리** |
+| `/usr/share/logstash/bin/` | 실행 바이너리 |
+| `/var/log/logstash/` | 로그 디렉토리 |
+
+### 파이프라인 설정
+
+```bash
+# 테스트용 간단한 파이프라인 생성
+cat > /etc/logstash/conf.d/test.conf << 'EOF'
+input {
+  # stdin으로 테스트 입력
+  stdin {}
+}
+
+filter {
+  # 메시지를 대문자로 변환
+  mutate {
+    uppercase => ["message"]
+  }
+}
+
+output {
+  # 콘솔 출력
+  stdout {
+    codec => rubydebug
+  }
+
+  # Elasticsearch로 전송
+  elasticsearch {
+    hosts => ["http://localhost:9200"]
+    index => "test-logstash-%{+YYYY.MM.dd}"
+  }
+}
+EOF
+```
+
+### 설정 테스트
+
+```bash
+# 설정 파일 문법 검증 (--config.test_and_exit)
+/usr/share/logstash/bin/logstash -f /etc/logstash/conf.d/test.conf --config.test_and_exit
+# 기대: "Configuration OK"
+```
+
+### 파이프라인 실행 테스트
+
+```bash
+# Logstash 실행 (포그라운드, 테스트용)
+echo "hello siem lab" | /usr/share/logstash/bin/logstash -f /etc/logstash/conf.d/test.conf --path.data /tmp/logstash-test
+
+# 출력 확인:
+# {
+#     "message" => "HELLO SIEM LAB",    ← 대문자 변환됨
+#     "@timestamp" => ...,
+#     ...
+# }
+```
+
+### 웹 로그 파이프라인 생성
+
+```bash
+# 실제 웹 로그 파싱 파이프라인
+cat > /etc/logstash/conf.d/web-access.conf << 'CONF'
+input {
+  file {
+    path => "/var/log/sample/web-access.log"
+    start_position => "beginning"
+    sincedb_path => "/dev/null"
+    tags => ["web"]
+  }
+}
+
+filter {
+  if "web" in [tags] {
+    grok {
+      match => {
+        "message" => '%{IPORHOST:source.ip} - %{DATA:user.name} \[%{HTTPDATE:timestamp}\] "%{WORD:http.method} %{URIPATHPARAM:url.path} HTTP/%{NUMBER}" %{NUMBER:status:int} %{NUMBER:bytes:int} "%{DATA:referrer}" "%{DATA:user_agent}"'
+      }
+    }
+    date {
+      match => ["timestamp", "dd/MMM/yyyy:HH:mm:ss Z"]
+      target => "@timestamp"
+    }
+  }
+}
+
+output {
+  if "web" in [tags] {
+    elasticsearch {
+      hosts => ["http://localhost:9200"]
+      index => "security-web-manual-%{+YYYY.MM.dd}"
+    }
+  }
+}
+CONF
+```
+
+### Logstash 서비스 시작
+
+```bash
+# 백그라운드 실행
+/usr/share/logstash/bin/logstash -f /etc/logstash/conf.d/web-access.conf --path.data /tmp/logstash-data &
+
+# 로그 확인
+tail -f /var/log/logstash/logstash-plain.log
+# 기대: "Pipeline started"
+```
+
+### 확인 포인트
+- [ ] `--config.test_and_exit` → "Configuration OK"
+- [ ] stdin 테스트 → 대문자 변환 출력
+- [ ] Pipeline started 메시지
+
+---
+
+## Step 6: Filebeat 설치
+
+```bash
+# 설치
+apt-get install -y filebeat
+
+# 버전 확인
+filebeat version
+```
+
+### 주요 파일 위치
+
+| 경로 | 용도 |
+|------|------|
+| `/etc/filebeat/filebeat.yml` | **메인 설정 파일** |
+| `/etc/filebeat/modules.d/` | 모듈 설정 디렉토리 |
+| `/usr/share/filebeat/bin/` | 실행 바이너리 |
+
+### 설정 파일
+
+```bash
+cat > /etc/filebeat/filebeat.yml << 'EOF'
+filebeat.inputs:
+  - type: log
+    enabled: true
+    paths:
+      - /var/log/sample/*.log
+    tags: ["web"]
+
+# Logstash로 전송
+output.logstash:
+  hosts: ["localhost:5044"]
+
+# 또는 ES로 직접 전송
+#output.elasticsearch:
+#  hosts: ["localhost:9200"]
+#  index: "filebeat-%{+yyyy.MM.dd}"
+
+logging.level: info
+EOF
+```
+
+### 설정 테스트
+
+```bash
+# 설정 검증
+filebeat test config
+# 기대: "Config OK"
+
+# 출력 연결 테스트
+filebeat test output
+# Logstash 미실행 시 실패 → ES 직접 전송으로 전환하여 테스트
+```
+
+### Filebeat 모듈 활용
+
+```bash
+# 사용 가능한 모듈 목록
+filebeat modules list
+
+# Apache 모듈 활성화
+filebeat modules enable apache
+
+# 모듈 설정 확인
+cat /etc/filebeat/modules.d/apache.yml
+
+# Nginx 모듈 활성화
+filebeat modules enable nginx
+
+# Suricata 모듈 활성화
+filebeat modules enable suricata
+```
+
+### 확인 포인트
+- [ ] `filebeat version` → 버전 출력
+- [ ] `filebeat test config` → "Config OK"
+- [ ] `filebeat modules list` → 모듈 목록 출력
+
+---
+
+## Step 7: 전체 통합 테스트
+
+모든 컴포넌트가 설치된 상태에서 통합 테스트를 수행합니다.
+
+```bash
+# 1. ES 동작 확인
+curl -s http://localhost:9200/_cluster/health | jq '{status, number_of_nodes}'
+
+# 2. Kibana 동작 확인
+curl -s http://localhost:5601/api/status | jq '.status.overall.level'
+
+# 3. 샘플 로그 생성
+mkdir -p /var/log/sample
+cat > /var/log/sample/web-access.log << 'LOG'
+203.0.113.42 - - [26/Mar/2026:10:00:00 +0900] "GET /login?user=admin'OR'1'='1 HTTP/1.1" 200 1234 "-" "sqlmap/1.7"
+10.0.1.50 - - [26/Mar/2026:10:00:01 +0900] "GET /index.html HTTP/1.1" 200 5678 "-" "Mozilla/5.0"
+198.51.100.77 - - [26/Mar/2026:10:00:02 +0900] "POST /login HTTP/1.1" 401 100 "-" "Mozilla/5.0"
+LOG
+
+# 4. Logstash로 파싱 확인
+# (Step 5에서 시작한 Logstash가 자동으로 처리)
+
+# 5. ~30초 대기 후 인덱스 확인
+curl -s http://localhost:9200/_cat/indices?v
+# 기대: security-web-manual-* 인덱스 생성, 3건
+
+# 6. 파싱된 문서 확인
+curl -s 'http://localhost:9200/security-web-manual-*/_search?size=1&pretty'
+# source.ip, url.path, status 등 필드 확인
+```
+
+---
+
+## Step 8: 설치 패키지 비교 정리
+
+### APT vs tar.gz vs Docker
+
+| 방법 | 장점 | 단점 | 적합 환경 |
+|------|------|------|----------|
+| **APT** (본 가이드) | 서비스 관리 (systemctl), 자동 업데이트 | Debian/Ubuntu만 | 운영 서버 |
+| **RPM/YUM** | 서비스 관리 | RHEL/CentOS만 | 운영 서버 |
+| **tar.gz** | OS 무관, 다중 버전 | 서비스 등록 수동 | 테스트, 다중 인스턴스 |
+| **Docker** | 격리, 재현성, 1줄 실행 | 운영 복잡도 | 개발, POC, CI/CD |
+
+### 설정 파일 위치 비교
+
+| 컴포넌트 | APT 경로 | Docker 경로 |
+|---------|---------|------------|
+| ES config | `/etc/elasticsearch/` | `/usr/share/elasticsearch/config/` |
+| ES data | `/var/lib/elasticsearch/` | 볼륨 마운트 |
+| Kibana config | `/etc/kibana/` | `/usr/share/kibana/config/` |
+| Logstash pipeline | `/etc/logstash/conf.d/` | 볼륨 마운트 (`./logstash/pipeline/`) |
+| Filebeat config | `/etc/filebeat/` | 볼륨 마운트 (`./filebeat/filebeat.yml`) |
+
+### 서비스 관리 (systemctl — 실제 서버에서)
+
+```bash
+# 시작
+systemctl start elasticsearch
+systemctl start kibana
+systemctl start logstash
+systemctl start filebeat
+
+# 부팅 시 자동 시작
+systemctl enable elasticsearch
+systemctl enable kibana
+systemctl enable logstash
+systemctl enable filebeat
+
+# 상태 확인
+systemctl status elasticsearch
+systemctl status kibana
+
+# 로그 확인
+journalctl -u elasticsearch -f
+journalctl -u kibana -f
+```
+
+> **참고**: Docker 컨테이너 내부에서는 systemctl 사용 불가. 직접 실행(`/usr/share/*/bin/*`)으로 대체.
+
+---
+
+## 정리 및 삭제
+
+```bash
+# 컨테이너 종료 및 삭제
+exit
+docker stop elk-manual && docker rm elk-manual
+```
+
+---
+
+## 핵심 정리
+
+| 단계 | 명령 | 확인 |
+|------|------|------|
+| Java 설치 | `apt install openjdk-17-jdk-headless` | `java -version` |
+| APT 저장소 | `echo "deb ..." > /etc/apt/sources.list.d/elastic-8.x.list` | `apt-cache search elastic` |
+| ES 설치 | `apt install elasticsearch` | `curl localhost:9200` |
+| ES 설정 | `/etc/elasticsearch/elasticsearch.yml` | `cluster.name`, `discovery.type` |
+| Kibana 설치 | `apt install kibana` | `curl localhost:5601/api/status` |
+| Kibana 설정 | `/etc/kibana/kibana.yml` | `elasticsearch.hosts` |
+| Logstash 설치 | `apt install logstash` | `--config.test_and_exit` |
+| Logstash 설정 | `/etc/logstash/conf.d/*.conf` | `Pipeline started` |
+| Filebeat 설치 | `apt install filebeat` | `filebeat test config` |
+| Filebeat 설정 | `/etc/filebeat/filebeat.yml` | `output.logstash` or `output.elasticsearch` |

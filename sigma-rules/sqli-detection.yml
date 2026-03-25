@@ -1,0 +1,34 @@
+title: SQL Injection Detection via Web Log
+id: a1b2c3d4-0001-4000-8000-000000000001
+status: experimental
+description: Detects SQL Injection attempts in web server access logs
+author: SIEM Lab
+date: 2026/03/26
+logsource:
+    category: webserver
+    product: apache
+detection:
+    selection_uri:
+        cs-uri-query|contains:
+            - "' OR "
+            - "UNION SELECT"
+            - "UNION ALL SELECT"
+            - "1=1"
+            - "DROP TABLE"
+            - "SLEEP("
+            - "BENCHMARK("
+            - "information_schema"
+            - "' AND '"
+            - "ORDER BY 1"
+    selection_status:
+        sc-status:
+            - 200
+            - 500
+    condition: selection_uri
+level: high
+falsepositives:
+    - Legitimate search queries containing SQL keywords
+    - Security scanners
+tags:
+    - attack.initial_access
+    - attack.t1190

@@ -1,0 +1,30 @@
+title: Cross-Site Scripting (XSS) Detection via Web Log
+id: a1b2c3d4-0002-4000-8000-000000000002
+status: experimental
+description: Detects XSS attempts in web server access logs
+author: SIEM Lab
+date: 2026/03/26
+logsource:
+    category: webserver
+    product: apache
+detection:
+    selection:
+        cs-uri-query|contains:
+            - "<script>"
+            - "<script"
+            - "javascript:"
+            - "onerror="
+            - "onload="
+            - "onmouseover="
+            - "<svg"
+            - "<img"
+            - "document.cookie"
+            - "alert("
+    condition: selection
+level: high
+falsepositives:
+    - Web development tools
+    - Legitimate HTML content in URLs
+tags:
+    - attack.initial_access
+    - attack.t1189
