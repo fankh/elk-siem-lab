@@ -162,12 +162,16 @@ EOF
 > **주의**: `apt install elasticsearch`는 자동으로 SSL 키스토어에 비밀번호를 설정합니다. `xpack.security.enabled: false`로 비활성화했지만 키스토어에 SSL 설정이 남아있으면 시작 시 에러가 발생합니다.
 
 ```bash
-# APT 설치 시 자동 생성된 SSL 키스토어 설정 제거
-/usr/share/elasticsearch/bin/elasticsearch-keystore remove xpack.security.transport.ssl.keystore.secure_password
-/usr/share/elasticsearch/bin/elasticsearch-keystore remove xpack.security.transport.ssl.truststore.secure_password
+# 디렉토리 소유권 먼저 변경 (키스토어 파일 수정을 위해)
+chown -R elasticsearch:elasticsearch /etc/elasticsearch
+chown -R elasticsearch:elasticsearch /usr/share/elasticsearch
+
+# APT 설치 시 자동 생성된 SSL 키스토어 설정 제거 — elasticsearch 사용자로 실행
+su -s /bin/bash elasticsearch -c '/usr/share/elasticsearch/bin/elasticsearch-keystore remove xpack.security.transport.ssl.keystore.secure_password'
+su -s /bin/bash elasticsearch -c '/usr/share/elasticsearch/bin/elasticsearch-keystore remove xpack.security.transport.ssl.truststore.secure_password'
 
 # 확인 (남은 설정 목록)
-/usr/share/elasticsearch/bin/elasticsearch-keystore list
+su -s /bin/bash elasticsearch -c '/usr/share/elasticsearch/bin/elasticsearch-keystore list'
 # 기대: keystore.seed 만 남아있으면 정상
 ```
 
@@ -176,11 +180,9 @@ EOF
 > **주의**: Elasticsearch는 보안상 root 사용자로 실행할 수 없습니다. `apt install elasticsearch` 시 자동 생성된 `elasticsearch` 사용자로 실행해야 합니다.
 
 ```bash
-# 디렉토리 소유권 변경 (elasticsearch 사용자에게)
-chown -R elasticsearch:elasticsearch /etc/elasticsearch
+# 나머지 디렉토리 소유권 변경 (위에서 /etc, /usr/share는 완료)
 chown -R elasticsearch:elasticsearch /var/lib/elasticsearch
 chown -R elasticsearch:elasticsearch /var/log/elasticsearch
-chown -R elasticsearch:elasticsearch /usr/share/elasticsearch
 
 # 서비스 시작 — elasticsearch 사용자로 실행 (root로 실행 시 에러 발생)
 su -s /bin/bash elasticsearch -c '/usr/share/elasticsearch/bin/elasticsearch -d -p /tmp/es.pid'
