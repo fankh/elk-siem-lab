@@ -166,13 +166,24 @@ EOF
 chown -R elasticsearch:elasticsearch /etc/elasticsearch
 chown -R elasticsearch:elasticsearch /usr/share/elasticsearch
 
-# APT 설치 시 자동 생성된 SSL 키스토어 설정 제거 — elasticsearch 사용자로 실행
+# 현재 키스토어 설정 확인
+su -s /bin/bash elasticsearch -c '/usr/share/elasticsearch/bin/elasticsearch-keystore list'
+# APT 설치 시 자동 생성된 항목 예시:
+#   autoconfiguration.password_hash
+#   keystore.seed
+#   xpack.security.http.ssl.keystore.secure_password
+#   xpack.security.transport.ssl.keystore.secure_password
+#   xpack.security.transport.ssl.truststore.secure_password
+
+# keystore.seed를 제외한 모든 보안 관련 설정 제거 — elasticsearch 사용자로 실행
 su -s /bin/bash elasticsearch -c '/usr/share/elasticsearch/bin/elasticsearch-keystore remove xpack.security.transport.ssl.keystore.secure_password'
 su -s /bin/bash elasticsearch -c '/usr/share/elasticsearch/bin/elasticsearch-keystore remove xpack.security.transport.ssl.truststore.secure_password'
+su -s /bin/bash elasticsearch -c '/usr/share/elasticsearch/bin/elasticsearch-keystore remove xpack.security.http.ssl.keystore.secure_password'
+su -s /bin/bash elasticsearch -c '/usr/share/elasticsearch/bin/elasticsearch-keystore remove autoconfiguration.password_hash'
 
-# 확인 (남은 설정 목록)
+# 확인 (keystore.seed만 남아있으면 정상)
 su -s /bin/bash elasticsearch -c '/usr/share/elasticsearch/bin/elasticsearch-keystore list'
-# 기대: keystore.seed 만 남아있으면 정상
+# 기대: keystore.seed
 ```
 
 ### 시작 및 확인
