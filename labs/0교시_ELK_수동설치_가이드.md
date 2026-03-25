@@ -157,6 +157,20 @@ EOF
 
 > **규칙**: Xms와 Xmx는 반드시 동일하게 설정. 전체 메모리의 50% 이하 권장.
 
+### SSL 키스토어 초기화 (보안 비활성화 시 필수)
+
+> **주의**: `apt install elasticsearch`는 자동으로 SSL 키스토어에 비밀번호를 설정합니다. `xpack.security.enabled: false`로 비활성화했지만 키스토어에 SSL 설정이 남아있으면 시작 시 에러가 발생합니다.
+
+```bash
+# APT 설치 시 자동 생성된 SSL 키스토어 설정 제거
+/usr/share/elasticsearch/bin/elasticsearch-keystore remove xpack.security.transport.ssl.keystore.secure_password
+/usr/share/elasticsearch/bin/elasticsearch-keystore remove xpack.security.transport.ssl.truststore.secure_password
+
+# 확인 (남은 설정 목록)
+/usr/share/elasticsearch/bin/elasticsearch-keystore list
+# 기대: keystore.seed 만 남아있으면 정상
+```
+
 ### 시작 및 확인
 
 > **주의**: Elasticsearch는 보안상 root 사용자로 실행할 수 없습니다. `apt install elasticsearch` 시 자동 생성된 `elasticsearch` 사용자로 실행해야 합니다.
@@ -183,6 +197,7 @@ curl -s http://localhost:9200/_cluster/health?pretty
 > **트러블슈팅**:
 > - `can not run elasticsearch as root` → 위의 `su -s /bin/bash elasticsearch -c '...'` 명령으로 실행
 > - `Permission denied: gc.log` → `chown -R elasticsearch:elasticsearch /usr/share/elasticsearch` 실행 후 재시도
+> - `xpack.security.transport.ssl` 관련 에러 → 위의 "SSL 키스토어 초기화" 단계 수행 후 재시도
 
 ### 확인 포인트
 - [ ] `curl localhost:9200` → JSON 응답
