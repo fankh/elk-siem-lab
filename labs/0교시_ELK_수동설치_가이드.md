@@ -493,6 +493,10 @@ filebeat.inputs:
       - /var/log/sample/*.log
     tags: ["web"]
 
+# 모듈 설정 경로 (filebeat modules 명령 사용에 필요)
+filebeat.config.modules:
+  path: ${path.config}/modules.d/*.yml
+
 # Logstash로 전송
 output.logstash:
   hosts: ["localhost:5044"]
