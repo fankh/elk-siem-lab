@@ -54,10 +54,10 @@ for rule in /lab/sigma-rules/*.yml; do
 done
 
 # 호스트에서 — Sigma 룰 파일 직접 읽기
-cat sigma-rules/sqli-detection.yml
-cat sigma-rules/xss-detection.yml
-cat sigma-rules/bruteforce-detection.yml
-cat sigma-rules/path-traversal.yml
+type sigma-rules\sqli-detection.yml
+type sigma-rules\xss-detection.yml
+type sigma-rules\bruteforce-detection.yml
+type sigma-rules\path-traversal.yml
 ```
 
 ---
