@@ -123,26 +123,7 @@ HTTP 4xx/5xx 에러 발생 추이를 시계열로 시각화한다.
 1. Kibana 좌측 메뉴에서 **Dashboard** > **Create dashboard** 클릭
 2. **Create visualization** 클릭 (Lens 에디터 진입)
 3. 차트 타입: **Area**
-4. 설정:
-   - **Horizontal axis**: `@timestamp` (Date Histogram, interval: auto)
-   - **Vertical axis**: Count, 필터 조건 추가
-
-5. Vertical axis 필터에 아래 KQL 입력:
-
-```
-http.response.status_code >= 400
-```
-
-6. 제목을 `Error Rate Timeline`으로 설정하고 **Save and return**
-
-> 정상 트래픽 대비 에러 비율이 급증하는 구간이 공격 시점이다.
-
-### Step 1 상세: Lens Area Chart 생성 순서
-
-1. **Kibana** → **Analytics** → **Visualize Library** → **Create visualization**
-2. **Lens** 선택
-3. 좌측 **Data view**: `security-web-*` 선택
-4. **Visualization type**: `Area` 선택 (상단 드롭다운)
+4. 좌측 **Data view**: `security-web-*` 선택
 
 **X축 설정:**
 5. 하단 **Horizontal axis** 클릭
@@ -150,15 +131,21 @@ http.response.status_code >= 400
 7. **Function**: `Date histogram`
 8. **Minimum interval**: `Auto` (또는 `1 minute`)
 
-**Y축 설정:**
+**Y축 설정 (Formula 사용):**
 9. 좌측 **Vertical axis** 클릭
-10. **Function**: `Count`
-11. **Filter** (KQL): `http.response.status_code >= 400`
+10. **Function** 드롭다운에서 맨 아래 **Formula** 선택
+11. 수식 입력란에 아래 입력:
+
+```
+count(kql='http.response.status_code >= 400')
+```
+
+> **참고**: Lens에서 특정 조건으로 필터링된 Count를 사용하려면 **Formula** 기능의 `count(kql='...')` 구문을 사용합니다. 일반 Count에는 KQL 필터 입력란이 없습니다.
 
 **스타일:**
 12. 색상: 빨간색 계열 (에러 강조)
 13. 제목: "Error Rate Timeline"
-14. **Save** → Dashboard에 추가
+14. **Save and return** → Dashboard에 추가
 
 **기대 결과:** 시간대별 에러 발생 추이 그래프. Brute-force 시간대에 **급격한 spike** 확인.
 
@@ -169,33 +156,22 @@ http.response.status_code >= 400
 가장 많은 에러를 발생시킨 IP를 식별한다.
 
 1. **Create visualization** > Lens > **Bar horizontal**
-2. 설정:
-   - **Vertical axis**: `source.ip` (Terms aggregation, Top 10)
-   - **Horizontal axis**: Count
-
-3. 필터 추가 (KQL):
-
-```
-http.response.status_code >= 400
-```
-
-4. 제목: `Top 10 공격 IP`로 저장
-
-### Step 2 상세: Top 10 IP 바 차트 생성
-
-1. **Create visualization** → **Lens** → `Bar vertical`
 2. **Data view**: `security-web-*`
 
-**X축:**
+**X축 (Vertical axis):**
 3. **Field**: `source.ip.keyword` (반드시 `.keyword` 사용)
 4. **Function**: `Top values`
 5. **Number of values**: `10`
 
-**Y축:**
-6. **Function**: `Count`
+**Y축 (Horizontal axis) — Formula 사용:**
+6. **Function** 드롭다운에서 **Formula** 선택
+7. 수식 입력:
 
-**필터:**
-7. KQL: `tags: attack OR tags: sqli OR tags: xss OR tags: path_traversal`
+```
+count(kql='tags: attack OR tags: sqli OR tags: xss OR tags: path_traversal')
+```
+
+8. 제목: `Top 10 공격 IP`로 저장
 
 **정렬:**
 8. Y축 기준 내림차순 (가장 많은 공격 IP가 맨 왼쪽)
@@ -226,7 +202,7 @@ http.response.status_code >= 400
 1. Kibana 좌측 메뉴에서 **Maps** 클릭
 2. **Add layer** > **Documents** 선택
 3. 인덱스 패턴 선택 후, Geospatial field: `source.geo.location`
-4. 필터 추가:
+4. 상단 **검색 바** (KQL)에 필터 입력:
 
 ```
 http.response.status_code >= 400
@@ -277,11 +253,13 @@ http.response.status_code >= 400
 - Label: `정상 (2xx)`
 - Aggregation: Count
 - Group by: Everything
-- Filter (KQL):
+- **Filter** 입력란 (시리즈 설정 내 `Filter` 필드에 KQL 입력):
 
 ```
 http.response.status_code >= 200 AND http.response.status_code < 300
 ```
+
+> **참고**: TSVB는 각 시리즈마다 자체 **Filter** 입력란이 있습니다. Lens의 Formula와 달리 직접 KQL을 입력할 수 있습니다.
 
 **시리즈 2 - 공격 트래픽:**
 - Label: `공격 (4xx/5xx)`
