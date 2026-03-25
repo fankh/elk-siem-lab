@@ -31,6 +31,35 @@ docker exec -it tools bash
 > | **macOS/Linux** | 호스트 터미널에서 `curl localhost:9200/...` |
 > | **Windows PowerShell** | `curl.exe localhost:9200/...` 또는 브라우저 직접 접속 |
 > | **브라우저** | http://localhost:9200 (ES) / http://localhost:5601 (Kibana) |
+
+### 컨테이너 접속 및 파일 확인
+
+```bash
+# tools 컨테이너 — Sigma 룰 읽기 및 변환 (권장)
+docker exec -it tools bash
+# Sigma 룰 파일 목록
+ls -la /lab/sigma-rules/
+# 각 룰 내용 읽기
+cat /lab/sigma-rules/sqli-detection.yml
+cat /lab/sigma-rules/xss-detection.yml
+cat /lab/sigma-rules/bruteforce-detection.yml
+cat /lab/sigma-rules/path-traversal.yml
+# Sigma 변환 테스트
+sigma convert -t lucene --without-pipeline /lab/sigma-rules/sqli-detection.yml
+# 전체 룰 변환
+for rule in /lab/sigma-rules/*.yml; do
+    echo "=== $(basename $rule) ==="
+    sigma convert -t lucene --without-pipeline "$rule"
+    echo ""
+done
+
+# 호스트에서 — Sigma 룰 파일 직접 읽기
+cat sigma-rules/sqli-detection.yml
+cat sigma-rules/xss-detection.yml
+cat sigma-rules/bruteforce-detection.yml
+cat sigma-rules/path-traversal.yml
+```
+
 ---
 
 ## 컴포넌트 설치: Sigma CLI

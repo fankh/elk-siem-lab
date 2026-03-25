@@ -159,9 +159,16 @@ EOF
 
 ### 시작 및 확인
 
+> **주의**: Elasticsearch는 보안상 root 사용자로 실행할 수 없습니다. `apt install elasticsearch` 시 자동 생성된 `elasticsearch` 사용자로 실행해야 합니다.
+
 ```bash
-# 서비스 시작 (컨테이너에서는 직접 실행)
-/usr/share/elasticsearch/bin/elasticsearch -d -p /tmp/es.pid
+# 디렉토리 소유권 변경 (elasticsearch 사용자에게)
+chown -R elasticsearch:elasticsearch /etc/elasticsearch
+chown -R elasticsearch:elasticsearch /var/lib/elasticsearch
+chown -R elasticsearch:elasticsearch /var/log/elasticsearch
+
+# 서비스 시작 — elasticsearch 사용자로 실행 (root로 실행 시 에러 발생)
+su -s /bin/bash elasticsearch -c '/usr/share/elasticsearch/bin/elasticsearch -d -p /tmp/es.pid'
 
 # ~30초 대기 후 확인
 curl -s http://localhost:9200?pretty
@@ -171,6 +178,8 @@ curl -s http://localhost:9200?pretty
 curl -s http://localhost:9200/_cluster/health?pretty
 # 기대: status: "green" (데이터 없으므로 green)
 ```
+
+> **트러블슈팅**: `can not run elasticsearch as root` 에러가 발생하면 위의 `su -s /bin/bash elasticsearch -c '...'` 명령으로 실행하세요.
 
 ### 확인 포인트
 - [ ] `curl localhost:9200` → JSON 응답
@@ -217,14 +226,26 @@ EOF
 
 ### 시작 및 확인
 
+> **주의**: Kibana도 root로 실행하는 것은 권장되지 않습니다. `apt install kibana` 시 자동 생성된 `kibana` 사용자로 실행합니다.
+
 ```bash
-# 서비스 시작 (백그라운드)
-/usr/share/kibana/bin/kibana --allow-root &
+# 디렉토리 소유권 변경 (kibana 사용자에게)
+chown -R kibana:kibana /etc/kibana
+chown -R kibana:kibana /var/log/kibana
+chown -R kibana:kibana /usr/share/kibana
+
+# 서비스 시작 — kibana 사용자로 백그라운드 실행
+su -s /bin/bash kibana -c '/usr/share/kibana/bin/kibana' &
 
 # ~60초 대기 후 확인
 curl -s http://localhost:5601/api/status | jq '.status.overall.level'
 # 기대: "available"
 ```
+
+> **대안**: root로 실행이 필요한 경우 `--allow-root` 플래그를 사용할 수 있습니다:
+> ```bash
+> /usr/share/kibana/bin/kibana --allow-root &
+> ```
 
 > **브라우저 접속**: http://localhost:15601 (호스트에서 접근 시 매핑된 포트)
 
@@ -286,19 +307,32 @@ output {
 EOF
 ```
 
+### 디렉토리 소유권 설정
+
+> **주의**: Logstash도 `logstash` 사용자로 실행하는 것이 권장됩니다. `apt install logstash` 시 자동 생성된 `logstash` 사용자에게 소유권을 부여합니다.
+
+```bash
+# 디렉토리 소유권 변경 (logstash 사용자에게)
+chown -R logstash:logstash /etc/logstash
+chown -R logstash:logstash /var/log/logstash
+chown -R logstash:logstash /usr/share/logstash
+mkdir -p /tmp/logstash-test /tmp/logstash-data
+chown -R logstash:logstash /tmp/logstash-test /tmp/logstash-data
+```
+
 ### 설정 테스트
 
 ```bash
 # 설정 파일 문법 검증 (--config.test_and_exit)
-/usr/share/logstash/bin/logstash -f /etc/logstash/conf.d/test.conf --config.test_and_exit
+su -s /bin/bash logstash -c '/usr/share/logstash/bin/logstash -f /etc/logstash/conf.d/test.conf --config.test_and_exit'
 # 기대: "Configuration OK"
 ```
 
 ### 파이프라인 실행 테스트
 
 ```bash
-# Logstash 실행 (포그라운드, 테스트용)
-echo "hello siem lab" | /usr/share/logstash/bin/logstash -f /etc/logstash/conf.d/test.conf --path.data /tmp/logstash-test
+# Logstash 실행 (포그라운드, 테스트용) — logstash 사용자로 실행
+echo "hello siem lab" | su -s /bin/bash logstash -c '/usr/share/logstash/bin/logstash -f /etc/logstash/conf.d/test.conf --path.data /tmp/logstash-test'
 
 # 출력 확인:
 # {
@@ -345,13 +379,20 @@ output {
   }
 }
 CONF
+
+# 파이프라인 설정 소유권 변경
+chown logstash:logstash /etc/logstash/conf.d/web-access.conf
 ```
 
 ### Logstash 서비스 시작
 
 ```bash
-# 백그라운드 실행
-/usr/share/logstash/bin/logstash -f /etc/logstash/conf.d/web-access.conf --path.data /tmp/logstash-data &
+# 샘플 로그 디렉토리 생성 및 읽기 권한 부여 (Step 7에서 로그 파일 생성)
+mkdir -p /var/log/sample
+chmod 755 /var/log/sample
+
+# 백그라운드 실행 — logstash 사용자로 실행
+su -s /bin/bash logstash -c '/usr/share/logstash/bin/logstash -f /etc/logstash/conf.d/web-access.conf --path.data /tmp/logstash-data &'
 
 # 로그 확인
 tail -f /var/log/logstash/logstash-plain.log
@@ -419,6 +460,24 @@ filebeat test output
 # Logstash 미실행 시 실패 → ES 직접 전송으로 전환하여 테스트
 ```
 
+### Filebeat 서비스 시작
+
+```bash
+# 샘플 로그 디렉토리 확인 (Step 7에서 생성)
+ls -la /var/log/sample/
+
+# Filebeat 시작 (백그라운드) — Filebeat는 root로 실행 가능
+filebeat -e -c /etc/filebeat/filebeat.yml &
+
+# 로그 출력에서 Harvester 시작 확인
+# 기대: "Harvester started for file: /var/log/sample/web-access.log"
+
+# 데이터 디렉토리 확인
+ls /var/lib/filebeat/registry/
+```
+
+> **참고**: Filebeat는 Go 바이너리로, Elasticsearch/Logstash와 달리 root 실행이 허용됩니다. 단, 운영 환경에서는 전용 사용자 사용을 권장합니다.
+
 ### Filebeat 모듈 활용
 
 ```bash
@@ -464,8 +523,13 @@ cat > /var/log/sample/web-access.log << 'LOG'
 198.51.100.77 - - [26/Mar/2026:10:00:02 +0900] "POST /login HTTP/1.1" 401 100 "-" "Mozilla/5.0"
 LOG
 
+# 샘플 로그 파일 읽기 권한 부여 (logstash 사용자가 읽을 수 있도록)
+chmod 644 /var/log/sample/web-access.log
+
 # 4. Logstash로 파싱 확인
 # (Step 5에서 시작한 Logstash가 자동으로 처리)
+# Logstash가 실행 중이 아니면 아래 명령으로 시작:
+# su -s /bin/bash logstash -c '/usr/share/logstash/bin/logstash -f /etc/logstash/conf.d/web-access.conf --path.data /tmp/logstash-data &'
 
 # 5. ~30초 대기 후 인덱스 확인
 curl -s http://localhost:9200/_cat/indices?v
@@ -474,6 +538,11 @@ curl -s http://localhost:9200/_cat/indices?v
 # 6. 파싱된 문서 확인
 curl -s 'http://localhost:9200/security-web-manual-*/_search?size=1&pretty'
 # source.ip, url.path, status 등 필드 확인
+
+# 7. 파일 내용 확인 (CLI로 원본 로그 읽기)
+cat /var/log/sample/web-access.log
+wc -l /var/log/sample/web-access.log
+# 기대: 3줄
 ```
 
 ---
@@ -539,15 +608,33 @@ docker stop elk-manual && docker rm elk-manual
 
 ## 핵심 정리
 
-| 단계 | 명령 | 확인 |
-|------|------|------|
-| Java 설치 | `apt install openjdk-17-jdk-headless` | `java -version` |
-| APT 저장소 | `echo "deb ..." > /etc/apt/sources.list.d/elastic-8.x.list` | `apt-cache search elastic` |
-| ES 설치 | `apt install elasticsearch` | `curl localhost:9200` |
-| ES 설정 | `/etc/elasticsearch/elasticsearch.yml` | `cluster.name`, `discovery.type` |
-| Kibana 설치 | `apt install kibana` | `curl localhost:5601/api/status` |
-| Kibana 설정 | `/etc/kibana/kibana.yml` | `elasticsearch.hosts` |
-| Logstash 설치 | `apt install logstash` | `--config.test_and_exit` |
-| Logstash 설정 | `/etc/logstash/conf.d/*.conf` | `Pipeline started` |
-| Filebeat 설치 | `apt install filebeat` | `filebeat test config` |
-| Filebeat 설정 | `/etc/filebeat/filebeat.yml` | `output.logstash` or `output.elasticsearch` |
+| 단계 | 명령 | 실행 사용자 | 확인 |
+|------|------|:----------:|------|
+| Java 설치 | `apt install openjdk-17-jdk-headless` | root | `java -version` |
+| APT 저장소 | `echo "deb ..." > /etc/apt/sources.list.d/elastic-8.x.list` | root | `apt-cache search elastic` |
+| ES 설치 | `apt install elasticsearch` | root | `/usr/share/elasticsearch/bin/elasticsearch --version` |
+| ES 소유권 | `chown -R elasticsearch:elasticsearch /etc/elasticsearch /var/lib/elasticsearch /var/log/elasticsearch` | root | - |
+| ES 시작 | `su -s /bin/bash elasticsearch -c '...elasticsearch -d -p /tmp/es.pid'` | **elasticsearch** | `curl localhost:9200` |
+| ES 설정 | `/etc/elasticsearch/elasticsearch.yml` | root (편집) | `cluster.name`, `discovery.type` |
+| Kibana 설치 | `apt install kibana` | root | `/usr/share/kibana/bin/kibana --version` |
+| Kibana 소유권 | `chown -R kibana:kibana /etc/kibana /var/log/kibana /usr/share/kibana` | root | - |
+| Kibana 시작 | `su -s /bin/bash kibana -c '/usr/share/kibana/bin/kibana' &` | **kibana** | `curl localhost:5601/api/status` |
+| Kibana 설정 | `/etc/kibana/kibana.yml` | root (편집) | `elasticsearch.hosts` |
+| Logstash 설치 | `apt install logstash` | root | `/usr/share/logstash/bin/logstash --version` |
+| Logstash 소유권 | `chown -R logstash:logstash /etc/logstash /var/log/logstash /usr/share/logstash` | root | - |
+| Logstash 시작 | `su -s /bin/bash logstash -c '...logstash -f ... &'` | **logstash** | `Pipeline started` |
+| Logstash 설정 | `/etc/logstash/conf.d/*.conf` | root (편집) | `--config.test_and_exit` |
+| Filebeat 설치 | `apt install filebeat` | root | `filebeat version` |
+| Filebeat 시작 | `filebeat -e -c /etc/filebeat/filebeat.yml &` | root (허용) | `Harvester started` |
+| Filebeat 설정 | `/etc/filebeat/filebeat.yml` | root (편집) | `filebeat test config` |
+
+### 사용자 권한 요약
+
+> **핵심 규칙**: 설정 파일 편집은 root로, 서비스 시작은 전용 사용자로 실행합니다.
+
+| 컴포넌트 | 설치 시 생성되는 사용자 | root 실행 | 권장 실행 사용자 |
+|----------|:-------------------:|:---------:|:--------------:|
+| Elasticsearch | `elasticsearch` | **불가** (에러 발생) | `elasticsearch` |
+| Kibana | `kibana` | 가능 (`--allow-root`) | `kibana` |
+| Logstash | `logstash` | 가능 | `logstash` |
+| Filebeat | - | **가능** (Go 바이너리) | `root` |

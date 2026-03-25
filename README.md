@@ -7,7 +7,6 @@ ELK Stack 기반 보안 관제(SIEM) 실습 환경입니다. Docker Compose로 E
 | 항목 | 내용 |
 |------|------|
 | 과정명 | AI-SIEM 관제 실습 |
-| 슬라이드 | [security-lectures/kt-ai-siem](https://github.com/fankh/security-lectures/tree/master/kt-ai-siem) |
 | 형태 | Docker 기반 실습 중심 (6교시, 각 50분) |
 | 기술 스택 | Elasticsearch 8.12, Kibana 8.12, Logstash 8.12, Filebeat 8.12, Sigma |
 
@@ -131,6 +130,162 @@ curl.exe -s http://localhost:9200/security-web-*/_count | python -c "import sys,
 | Elasticsearch | 9200 | http://localhost:9200 | 로그 저장/검색 API |
 | Kibana | 5601 | http://localhost:5601 | 대시보드/시각화 UI |
 | Logstash | 5044 | - | Beats 입력 (내부) |
+
+### 컨테이너 접속 방법
+
+각 컨테이너에 접속하여 내부 파일 확인, 로그 조회, 디버깅을 수행할 수 있습니다.
+
+#### elasticsearch 컨테이너
+
+```bash
+# 접속
+docker exec -it elasticsearch bash
+
+# 내부 주요 경로
+/usr/share/elasticsearch/config/elasticsearch.yml   # 메인 설정
+/usr/share/elasticsearch/config/jvm.options          # JVM 메모리
+/usr/share/elasticsearch/data/                       # 인덱스 데이터
+/usr/share/elasticsearch/logs/                       # ES 로그
+
+# 내부에서 클러스터 상태 확인
+curl -s http://localhost:9200/_cluster/health?pretty
+curl -s http://localhost:9200/_cat/indices/security-*?v
+
+# 파일 읽기
+cat /usr/share/elasticsearch/config/elasticsearch.yml
+```
+
+#### kibana 컨테이너
+
+```bash
+# 접속
+docker exec -it kibana bash
+
+# 내부 주요 경로
+/usr/share/kibana/config/kibana.yml   # 메인 설정
+/usr/share/kibana/data/               # Kibana 데이터
+/usr/share/kibana/logs/               # Kibana 로그
+
+# 내부에서 상태 확인
+curl -s http://localhost:5601/api/status | head -20
+
+# 파일 읽기
+cat /usr/share/kibana/config/kibana.yml
+```
+
+#### logstash 컨테이너
+
+```bash
+# 접속
+docker exec -it logstash bash
+
+# 내부 주요 경로
+/usr/share/logstash/pipeline/          # 파이프라인 설정 (호스트에서 마운트)
+/usr/share/logstash/pipeline/web-access.conf
+/usr/share/logstash/pipeline/sysmon.conf
+/usr/share/logstash/pipeline/suricata.conf
+/usr/share/logstash/config/logstash.yml  # 메인 설정
+/var/log/sample/                         # 샘플 로그 (호스트에서 마운트)
+
+# 파이프라인 설정 읽기
+cat /usr/share/logstash/pipeline/web-access.conf
+cat /usr/share/logstash/pipeline/sysmon.conf
+cat /usr/share/logstash/pipeline/suricata.conf
+
+# 샘플 로그 확인
+head -5 /var/log/sample/web-access.log
+head -5 /var/log/sample/sysmon.json
+head -5 /var/log/sample/suricata-eve.json
+
+# 파이프라인 상태 확인
+curl -s http://localhost:9600/_node/stats?pretty | head -40
+```
+
+#### filebeat 컨테이너
+
+```bash
+# 접속
+docker exec -it filebeat bash
+
+# 내부 주요 경로
+/usr/share/filebeat/filebeat.yml       # 메인 설정 (호스트에서 마운트)
+/usr/share/filebeat/data/              # Filebeat 레지스트리 (수집 상태)
+/usr/share/filebeat/logs/              # Filebeat 로그
+/var/log/sample/                       # 샘플 로그 (호스트에서 마운트)
+/var/log/sample/web-access.log
+/var/log/sample/sysmon.json
+/var/log/sample/suricata-eve.json
+
+# 설정 파일 읽기
+cat /usr/share/filebeat/filebeat.yml
+
+# 샘플 로그 파일 확인 (줄 수, 파일 크기)
+wc -l /var/log/sample/web-access.log
+wc -l /var/log/sample/sysmon.json
+wc -l /var/log/sample/suricata-eve.json
+
+# 로그 원본 읽기
+head -10 /var/log/sample/web-access.log
+head -3 /var/log/sample/sysmon.json
+head -3 /var/log/sample/suricata-eve.json
+
+# 수집 레지스트리 확인 (어디까지 읽었는지)
+cat /usr/share/filebeat/data/registry/filebeat/log.json | head -20
+
+# 설정 검증
+filebeat test config
+filebeat test output
+```
+
+#### tools 컨테이너 (권장 CLI 환경)
+
+```bash
+# 접속
+docker exec -it tools bash
+
+# 내부 주요 경로
+/lab/sigma-rules/                      # Sigma 탐지 룰 (호스트에서 마운트)
+/lab/scripts/                          # 스크립트 (호스트에서 마운트)
+/lab/sample-logs/                      # 샘플 로그 (호스트에서 마운트)
+
+# 사전 설치 도구: curl, python3, sigma, jq
+
+# ES 접근 (Docker 내부 네트워크 — localhost 대신 elasticsearch 사용)
+curl http://elasticsearch:9200/_cluster/health?pretty
+curl http://elasticsearch:9200/_cat/indices/security-*?v
+
+# Sigma 룰 읽기/변환
+cat /lab/sigma-rules/sqli-detection.yml
+sigma convert -t lucene --without-pipeline /lab/sigma-rules/sqli-detection.yml
+
+# 샘플 로그 읽기
+head -10 /lab/sample-logs/web-access.log
+head -3 /lab/sample-logs/sysmon.json
+head -3 /lab/sample-logs/suricata-eve.json
+```
+
+#### tester 컨테이너 (자동 검증용)
+
+```bash
+# 접속 (test 프로파일이므로 별도 실행 필요)
+docker-compose --profile test run --rm tester bash
+
+# 또는 자동 테스트 실행
+docker-compose --profile test run --rm tester
+```
+
+#### 컨테이너 접속 요약표
+
+| 컨테이너 | 접속 명령 | 설치된 도구 | ES 접근 주소 |
+|----------|----------|-----------|-------------|
+| **elasticsearch** | `docker exec -it elasticsearch bash` | curl | `localhost:9200` |
+| **kibana** | `docker exec -it kibana bash` | curl, node | `elasticsearch:9200` |
+| **logstash** | `docker exec -it logstash bash` | curl | `elasticsearch:9200` |
+| **filebeat** | `docker exec -it filebeat bash` | filebeat | `logstash:5044` |
+| **tools** (권장) | `docker exec -it tools bash` | curl, python3, sigma, jq | `elasticsearch:9200` |
+| **tester** | `docker-compose --profile test run --rm tester bash` | curl, sigma | `elasticsearch:9200` |
+
+> **참고**: Docker 내부 네트워크에서는 `localhost` 대신 컨테이너 이름(`elasticsearch`, `kibana`, `logstash`)을 호스트명으로 사용합니다.
 
 ### 환경 설정 (.env)
 
@@ -482,12 +637,14 @@ elk-siem-lab/
 │   └── import-dashboards.sh        # Kibana 인덱스 패턴 + 대시보드 자동 설정
 │
 └── labs/                           # 교시별 실습 가이드 (Korean)
-    ├── 1교시_로그수집_파이프라인.md   #   : 로그 수집 파이프라인
-    ├── 2교시_인제스트_정규화.md      #   인제스트 및 정규화
-    ├── 3교시_이상징후_분석.md        #   이상 징후 분석
-    ├── 4교시_Kibana_대시보드.md     #   Kibana 대시보드 구성
-    ├── 5교시_Sigma_Rule.md         #   Sigma Rule 작성
-    └── 6교시_종합관제_실습.md        #   종합 관제 실습
+    ├── 0교시_실습환경_설치가이드.md   #   사전 준비: Docker 기반 환경 구성
+    ├── 0교시_ELK_수동설치_가이드.md   #   사전 준비: Plain Linux 수동 설치 (심화)
+    ├── 1교시_로그수집_파이프라인.md   #   1교시: 로그 수집 파이프라인
+    ├── 2교시_인제스트_정규화.md      #   2교시: 인제스트 및 정규화
+    ├── 3교시_이상징후_분석.md        #   3교시: 이상 징후 분석
+    ├── 4교시_Kibana_대시보드.md     #   4교시: Kibana 대시보드 구성
+    ├── 5교시_Sigma_Rule.md         #   5교시: Sigma Rule 작성
+    └── 6교시_종합관제_실습.md        #   6교시: 종합 관제 실습
 ```
 
 ---
@@ -607,12 +764,28 @@ done
 
 | 교시 | 실습 | 소요 | 핵심 학습 | 사용 도구 |
 |:----:|------|:----:|----------|----------|
+| 0-A | [실습 환경 설치 가이드](labs/0교시_실습환경_설치가이드.md) | 사전 | Docker Compose로 ELK 전체 환경 구성 | docker-compose |
+| 0-B | [ELK 수동 설치 가이드](labs/0교시_ELK_수동설치_가이드.md) | 사전 | Plain Linux에서 ELK 직접 설치 (심화) | apt, systemctl |
 | 1 | [로그 수집 파이프라인](labs/1교시_로그수집_파이프라인.md) | 50분 | Filebeat/Logstash 구성, 이기종 로그 통합 | docker-compose, curl |
 | 2 | [인제스트 및 정규화](labs/2교시_인제스트_정규화.md) | 50분 | Grok 패턴, ECS 매핑, GeoIP 보강 | Kibana Discover |
 | 3 | [이상 징후 분석](labs/3교시_이상징후_분석.md) | 50분 | KQL 검색, 공격 패턴 식별, 상관 분석 | Kibana Discover, KQL |
 | 4 | [Kibana 대시보드](labs/4교시_Kibana_대시보드.md) | 50분 | Lens/TSVB 시각화, GeoIP Map, 드릴다운 | Kibana Dashboard |
 | 5 | [Sigma Rule 작성](labs/5교시_Sigma_Rule.md) | 50분 | Sigma YAML 작성, ES 변환, Watcher | sigma-cli, Dev Tools |
 | 6 | [종합 관제 실습](labs/6교시_종합관제_실습.md) | 50분 | 실시간 탐지, 오탐 제거, 보고서 작성 | 전체 도구 |
+
+### 실습 파일 경로 (로컬)
+
+```
+labs/
+├── 0교시_실습환경_설치가이드.md        # 사전 준비: Docker 기반 환경 구성
+├── 0교시_ELK_수동설치_가이드.md        # 사전 준비: Plain Linux 수동 설치 (심화)
+├── 1교시_로그수집_파이프라인.md         # 1교시: Filebeat → Logstash → ES 파이프라인
+├── 2교시_인제스트_정규화.md            # 2교시: Grok 파싱, ECS 매핑, GeoIP
+├── 3교시_이상징후_분석.md              # 3교시: KQL 검색, 공격 패턴, 상관 분석
+├── 4교시_Kibana_대시보드.md           # 4교시: Lens, TSVB, Maps, 드릴다운
+├── 5교시_Sigma_Rule.md               # 5교시: Sigma YAML 작성, ES 변환, Watcher
+└── 6교시_종합관제_실습.md              # 6교시: 탐지→분석→대응→보고 전체 흐름
+```
 
 ---
 

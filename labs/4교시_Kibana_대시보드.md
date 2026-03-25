@@ -31,6 +31,34 @@ docker exec -it tools bash
 > | **macOS/Linux** | 호스트 터미널에서 `curl localhost:9200/...` |
 > | **Windows PowerShell** | `curl.exe localhost:9200/...` 또는 브라우저 직접 접속 |
 > | **브라우저** | http://localhost:9200 (ES) / http://localhost:5601 (Kibana) |
+
+### 컨테이너 접속 및 파일 확인
+
+```bash
+# kibana 컨테이너 — Kibana 설정 확인
+docker exec -it kibana bash
+cat /usr/share/kibana/config/kibana.yml
+exit
+
+# tools 컨테이너 — 대시보드 자동 import 스크립트 확인
+docker exec -it tools bash
+cat /lab/scripts/import-dashboards.sh
+
+# 호스트에서 — 대시보드 import 실행
+bash scripts/import-dashboards.sh
+
+# tools 컨테이너 — ES에서 인덱스 패턴/집계 데이터 확인
+docker exec -it tools bash
+# HTTP 상태 코드 분포 (Pie Chart 데이터 확인)
+curl -s 'http://elasticsearch:9200/security-web-*/_search?pretty' \
+  -H 'Content-Type: application/json' \
+  -d '{"size":0,"aggs":{"status_codes":{"terms":{"field":"http.response.status_code","size":10}}}}'
+# Top 공격 IP (Bar Chart 데이터 확인)
+curl -s 'http://elasticsearch:9200/security-web-*/_search?pretty' \
+  -H 'Content-Type: application/json' \
+  -d '{"size":0,"query":{"terms":{"tags":["sqli","xss","path_traversal"]}},"aggs":{"top_ips":{"terms":{"field":"source.ip.keyword","size":10}}}}'
+```
+
 ---
 
 ## 컴포넌트 설명: Kibana 시각화 도구
