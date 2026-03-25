@@ -49,10 +49,12 @@ cd elk-siem-lab
 docker-compose up -d
 
 # 3. 상태 확인 (ES가 healthy 될 때까지 ~60초)
-curl http://localhost:9200/_cluster/health?pretty
+docker exec -it tools curl http://elasticsearch:9200/_cluster/health?pretty
+# Windows 호스트에서: curl.exe http://localhost:9200/_cluster/health?pretty
 
 # 4. 인덱스 확인 (Logstash 처리 후 ~90초)
-curl http://localhost:9200/_cat/indices/security-*?v
+docker exec -it tools curl http://elasticsearch:9200/_cat/indices/security-*?v
+# Windows 호스트에서: curl.exe http://localhost:9200/_cat/indices/security-*?v
 
 # 5. Kibana 접속
 # http://localhost:5601
@@ -311,15 +313,19 @@ cd elk-siem-lab
 docker-compose up -d
 
 # 1-2. ~90초 대기 후 상태 확인
-curl -s http://localhost:9200/_cluster/health?pretty | grep status
+# tools 컨테이너에서 실행 (권장):
+docker exec -it tools curl -s http://elasticsearch:9200/_cluster/health?pretty | grep status
+# Windows 호스트에서: curl.exe -s http://localhost:9200/_cluster/health?pretty | findstr status
 # 기대: "status" : "yellow"
 
 # 1-3. 인덱스 3개 생성 확인
-curl -s http://localhost:9200/_cat/indices/security-*?v
+docker exec -it tools curl -s http://elasticsearch:9200/_cat/indices/security-*?v
+# Windows 호스트에서: curl.exe -s http://localhost:9200/_cat/indices/security-*?v
 # 기대: security-web-*, security-sysmon-*, security-suricata-*
 
 # 1-4. 문서 수 확인
-curl -s http://localhost:9200/security-web-*/_count?pretty
+docker exec -it tools curl -s http://elasticsearch:9200/security-web-*/_count?pretty
+# Windows 호스트에서: curl.exe -s http://localhost:9200/security-web-*/_count?pretty
 # 기대: 617건
 ```
 
@@ -337,16 +343,19 @@ curl -s http://localhost:9200/security-web-*/_count?pretty
 **목표**: Grok/ECS로 파싱된 필드를 Kibana에서 확인
 
 ```bash
+# tools 컨테이너에서 실행 (권장): docker exec -it tools bash
+# Windows 호스트에서는 curl → curl.exe, elasticsearch → localhost 로 변경
+
 # 2-1. 웹 로그 샘플 1건 확인 (파싱된 필드)
-curl -s http://localhost:9200/security-web-*/_search?size=1&pretty | head -40
+curl -s 'http://elasticsearch:9200/security-web-*/_search?size=1&pretty' | head -40
 # source.ip, url.path, http.response.status_code 등 필드 확인
 
 # 2-2. Sysmon ECS 매핑 확인
-curl -s http://localhost:9200/security-sysmon-*/_search?size=1&pretty | head -30
+curl -s 'http://elasticsearch:9200/security-sysmon-*/_search?size=1&pretty' | head -30
 # process.executable, process.command_line, user.name 필드 확인
 
 # 2-3. Suricata 이벤트 확인
-curl -s http://localhost:9200/security-suricata-*/_search?size=1&pretty | head -30
+curl -s 'http://elasticsearch:9200/security-suricata-*/_search?size=1&pretty' | head -30
 # source.ip, destination.ip, rule.name, event_type 필드 확인
 ```
 
@@ -793,97 +802,100 @@ labs/
 
 ELK Stack이 실행 중인 상태에서 각 교시별로 아래 명령어로 정상 동작을 확인합니다.
 
+> **실행 환경 안내**: 아래 명령어는 **tools 컨테이너 내부**(`docker exec -it tools bash`) 기준입니다.
+> - tools 컨테이너: `curl http://elasticsearch:9200/...`
+> - macOS/Linux 호스트: `curl http://localhost:9200/...`
+> - Windows 호스트: `curl.exe http://localhost:9200/...`
+
 ### 1교시: 로그 수집 파이프라인
 
 ```bash
-# ELK 시작
+# ELK 시작 (호스트에서 실행)
 docker-compose up -d
 
+# tools 컨테이너 접속
+docker exec -it tools bash
+
 # Elasticsearch 상태 확인 (~60초 대기)
-curl -s http://localhost:9200/_cluster/health?pretty | grep status
+curl -s http://elasticsearch:9200/_cluster/health?pretty | grep status
 # 기대: "status" : "green" 또는 "yellow"
 
 # 인덱스 생성 확인 (Logstash 처리 후 ~90초)
-curl -s http://localhost:9200/_cat/indices/security-*?v
+curl -s http://elasticsearch:9200/_cat/indices/security-*?v
 # 기대: security-web-*, security-sysmon-*, security-suricata-* 3개 인덱스
 
 # 각 인덱스 문서 수 확인
-curl -s http://localhost:9200/security-web-*/_count?pretty
-curl -s http://localhost:9200/security-sysmon-*/_count?pretty
-curl -s http://localhost:9200/security-suricata-*/_count?pretty
+curl -s http://elasticsearch:9200/security-web-*/_count?pretty
+curl -s http://elasticsearch:9200/security-sysmon-*/_count?pretty
+curl -s http://elasticsearch:9200/security-suricata-*/_count?pretty
 # 기대: Web ~617, Sysmon ~229, Suricata ~149
 ```
 
 ### 2교시: 인제스트 및 정규화
 
 ```bash
+# tools 컨테이너 내부에서 실행 (docker exec -it tools bash)
+
 # Grok 파싱 필드 확인 (웹 로그)
-curl -s http://localhost:9200/security-web-*/_search?size=1 | head -15
-# hits.total.value 에서 건수 확인MISSING\")}')"
+curl -s 'http://elasticsearch:9200/security-web-*/_search?size=1' | head -15
 # 기대: 5개 필드 모두 값이 있어야 함
 
 # ECS 매핑 확인 (Sysmon)
-curl -s http://localhost:9200/security-sysmon-*/_search?size=1 | head -15
-# hits.total.value 에서 건수 확인MISSING\")}')"
+curl -s 'http://elasticsearch:9200/security-sysmon-*/_search?size=1' | head -15
 # 기대: process.executable, process.command_line, user.name 필드 존재
 
 # GeoIP 필드 확인
-curl -s 'http://localhost:9200/security-web-*/_search' -H 'Content-Type: application/json' \
+curl -s 'http://elasticsearch:9200/security-web-*/_search' -H 'Content-Type: application/json' \
   -d '{"query":{"exists":{"field":"source.geo"}},"size":1}' | head -15
-# hits.total.value 에서 건수 확인
 # 기대: 0 이상 (외부 IP에 대해 GeoIP 적용)
 ```
 
 ### 3교시: 이상 징후 분석
 
 ```bash
+# tools 컨테이너 내부에서 실행 (docker exec -it tools bash)
+
 # SQLi 공격 로그 검색
-curl -s 'http://localhost:9200/security-web-*/_search' -H 'Content-Type: application/json' \
+curl -s 'http://elasticsearch:9200/security-web-*/_search' -H 'Content-Type: application/json' \
   -d '{"query":{"bool":{"filter":[{"term":{"tags":"sqli"}}]}},"size":0}' | head -15
-# hits.total.value 에서 건수 확인
 # 기대: ~9건
 
 # Brute-force 로그 (401 상태 + /login)
-curl -s 'http://localhost:9200/security-web-*/_search' -H 'Content-Type: application/json' \
+curl -s 'http://elasticsearch:9200/security-web-*/_search' -H 'Content-Type: application/json' \
   -d '{"query":{"bool":{"must":[{"term":{"http.response.status_code":401}},{"wildcard":{"url.path":"*login*"}}]}},"size":0}' | head -15
-# hits.total.value 에서 건수 확인
 # 기대: ~95건
 
 # XSS 공격 로그
-curl -s 'http://localhost:9200/security-web-*/_search' -H 'Content-Type: application/json' \
+curl -s 'http://elasticsearch:9200/security-web-*/_search' -H 'Content-Type: application/json' \
   -d '{"query":{"bool":{"filter":[{"term":{"tags":"xss"}}]}},"size":0}' | head -15
-# hits.total.value 에서 건수 확인
 # 기대: ~5건
 
 # Path Traversal 공격 로그
-curl -s 'http://localhost:9200/security-web-*/_search' -H 'Content-Type: application/json' \
+curl -s 'http://elasticsearch:9200/security-web-*/_search' -H 'Content-Type: application/json' \
   -d '{"query":{"bool":{"filter":[{"term":{"tags":"path_traversal"}}]}},"size":0}' | head -15
-# hits.total.value 에서 건수 확인
 # 기대: ~3건
 
 # Sysmon 의심 프로세스
-curl -s 'http://localhost:9200/security-sysmon-*/_search' -H 'Content-Type: application/json' \
+curl -s 'http://elasticsearch:9200/security-sysmon-*/_search' -H 'Content-Type: application/json' \
   -d '{"query":{"bool":{"filter":[{"term":{"tags":"suspicious"}}]}},"size":0}' | head -15
-# hits.total.value 에서 건수 확인
 # 기대: ~29건
 
 # Suricata 공격 알림
-curl -s 'http://localhost:9200/security-suricata-*/_search' -H 'Content-Type: application/json' \
+curl -s 'http://elasticsearch:9200/security-suricata-*/_search' -H 'Content-Type: application/json' \
   -d '{"query":{"term":{"event_type":"alert"}},"size":0}' | head -15
-# hits.total.value 에서 건수 확인
 # 기대: ~49건
 ```
 
 ### 4교시: Kibana 대시보드
 
 ```bash
+# tools 컨테이너 내부에서 실행 (docker exec -it tools bash)
 # Kibana 상태 확인
-curl -s http://localhost:5601/api/status | head -15
-# hits.total.value 에서 건수 확인
+curl -s http://kibana:5601/api/status | head -15
 # 기대: "available"
 
-# 인덱스 패턴 자동 생성 (import-dashboards.sh)
-bash scripts/import-dashboards.sh
+# 인덱스 패턴 자동 생성 (호스트에서 실행)
+# bash scripts/import-dashboards.sh
 ```
 
 **Kibana에서 수동 확인:**
@@ -916,32 +928,32 @@ done
 ### 6교시: 종합 관제
 
 ```bash
+# tools 컨테이너 내부에서 실행 (docker exec -it tools bash)
+
 # 전체 공격 현황 요약
 echo "=== SIEM Lab Attack Summary ==="
 for tag in sqli xss path_traversal; do
-    count=$(curl -s "http://localhost:9200/security-web-*/_count" -H 'Content-Type: application/json' \
-      -d "{\"query\":{\"bool\":{\"filter\":[{\"term\":{\"tags\":\"$tag\"}}]}}}" ?pretty)
-    echo "  $tag: $count건"
+    count=$(curl -s "http://elasticsearch:9200/security-web-*/_count" -H 'Content-Type: application/json' \
+      -d "{\"query\":{\"bool\":{\"filter\":[{\"term\":{\"tags\":\"$tag\"}}]}}}")
+    echo "  $tag: $count"
 done
 
 # Brute-force
-bf=$(curl -s 'http://localhost:9200/security-web-*/_count' -H 'Content-Type: application/json' \
-  -d '{"query":{"bool":{"must":[{"term":{"http.response.status_code":401}},{"wildcard":{"url.path":"*login*"}}]}}}' ?pretty)
-echo "  bruteforce: ${bf}건"
+bf=$(curl -s 'http://elasticsearch:9200/security-web-*/_count' -H 'Content-Type: application/json' \
+  -d '{"query":{"bool":{"must":[{"term":{"http.response.status_code":401}},{"wildcard":{"url.path":"*login*"}}]}}}')
+echo "  bruteforce: ${bf}"
 
 # 공격 IP Top 3
 echo ""
 echo "=== Top Attack IPs ==="
-curl -s 'http://localhost:9200/security-web-*/_search' -H 'Content-Type: application/json' \
+curl -s 'http://elasticsearch:9200/security-web-*/_search' -H 'Content-Type: application/json' \
   -d '{"size":0,"query":{"bool":{"filter":[{"terms":{"tags":["sqli","xss","path_traversal"]}}]}},"aggs":{"top_ips":{"terms":{"field":"source.ip.keyword","size":3}}}}' | head -15
-# hits.total.value 에서 건수 확인key\"]}: {b[\"doc_count\"]}건')"
 
 # IDS 시그니처 Top 5
 echo ""
 echo "=== Top IDS Signatures ==="
-curl -s 'http://localhost:9200/security-suricata-*/_search' -H 'Content-Type: application/json' \
+curl -s 'http://elasticsearch:9200/security-suricata-*/_search' -H 'Content-Type: application/json' \
   -d '{"size":0,"query":{"term":{"event_type":"alert"}},"aggs":{"sigs":{"terms":{"field":"rule.name.keyword","size":5}}}}' | head -15
-# hits.total.value 에서 건수 확인key\"]}: {b[\"doc_count\"]}건')"
 
 echo ""
 echo "=== All Tests Complete ==="
