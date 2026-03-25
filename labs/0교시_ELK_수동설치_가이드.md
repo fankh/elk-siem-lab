@@ -272,8 +272,8 @@ chown -R kibana:kibana /etc/kibana
 chown -R kibana:kibana /var/log/kibana
 chown -R kibana:kibana /usr/share/kibana
 
-# 서비스 시작 — kibana 사용자로 백그라운드 실행
-su -s /bin/bash kibana -c '/usr/share/kibana/bin/kibana' &
+# 서비스 시작 — kibana 사용자로 백그라운드 실행 (출력을 로그로 리다이렉트)
+su -s /bin/bash kibana -c '/usr/share/kibana/bin/kibana' > /var/log/kibana/kibana.log 2>&1 &
 
 # ~60초 대기 후 확인
 curl -s http://localhost:5601/api/status | jq '.status.overall.level'
@@ -370,7 +370,12 @@ su -s /bin/bash logstash -c '/usr/share/logstash/bin/logstash -f /etc/logstash/c
 
 ```bash
 # Logstash 실행 (포그라운드, 테스트용) — logstash 사용자로 실행
-echo "hello siem lab" | su -s /bin/bash logstash -c '/usr/share/logstash/bin/logstash -f /etc/logstash/conf.d/test.conf --path.data /tmp/logstash-test'
+# 방법 1: 임시 파일 사용 (파이프가 동작하지 않을 경우)
+echo "hello siem lab" > /tmp/logstash-input.txt
+su -s /bin/bash logstash -c '/usr/share/logstash/bin/logstash -f /etc/logstash/conf.d/test.conf --path.data /tmp/logstash-test < /tmp/logstash-input.txt'
+
+# 방법 2: stdin 파이프 (동작 시)
+# echo "hello siem lab" | su -s /bin/bash logstash -c '/usr/share/logstash/bin/logstash -f /etc/logstash/conf.d/test.conf --path.data /tmp/logstash-test'
 
 # 출력 확인:
 # {
@@ -429,13 +434,28 @@ chown logstash:logstash /etc/logstash/conf.d/web-access.conf
 mkdir -p /var/log/sample
 chmod 755 /var/log/sample
 
-# 백그라운드 실행 — logstash 사용자로 실행
-su -s /bin/bash logstash -c '/usr/share/logstash/bin/logstash -f /etc/logstash/conf.d/web-access.conf --path.data /tmp/logstash-data &'
+# 로그 디렉토리 확인 및 소유권 설정
+mkdir -p /var/log/logstash
+chown logstash:logstash /var/log/logstash
 
-# 로그 확인
+# 이전 Logstash 인스턴스가 실행 중이면 종료 (data directory 충돌 방지)
+pkill -f 'logstash.*web-access.conf' 2>/dev/null && echo "기존 인스턴스 종료됨" || echo "실행 중인 인스턴스 없음"
+# data directory 잠금 파일 정리
+rm -f /tmp/logstash-data/.lock 2>/dev/null
+
+# 백그라운드 실행 — logstash 사용자로 실행 (출력을 로그로 리다이렉트)
+nohup su -s /bin/bash logstash -c '/usr/share/logstash/bin/logstash -f /etc/logstash/conf.d/web-access.conf --path.data /tmp/logstash-data' > /var/log/logstash/logstash-plain.log 2>&1 &
+
+# ~30초 대기 후 로그 확인
+sleep 5
 tail -f /var/log/logstash/logstash-plain.log
 # 기대: "Pipeline started"
 ```
+
+> **트러블슈팅**:
+> - `already another instance using the configured data directory` → 위의 `pkill` 명령으로 기존 인스턴스를 종료한 후 재시작
+> - `No such file or directory: logstash-plain.log` → `mkdir -p /var/log/logstash && chown logstash:logstash /var/log/logstash` 후 재시작
+> - Logstash가 시작되었지만 로그 파일이 비어있음 → `sleep 30` 후 다시 확인 (JVM 초기화에 시간 소요)
 
 ### 확인 포인트
 - [ ] `--config.test_and_exit` → "Configuration OK"
@@ -576,7 +596,8 @@ chmod 644 /var/log/sample/web-access.log
 # 4. Logstash로 파싱 확인
 # (Step 5에서 시작한 Logstash가 자동으로 처리)
 # Logstash가 실행 중이 아니면 아래 명령으로 시작:
-# su -s /bin/bash logstash -c '/usr/share/logstash/bin/logstash -f /etc/logstash/conf.d/web-access.conf --path.data /tmp/logstash-data &'
+# pkill -f 'logstash.*web-access.conf' 2>/dev/null; sleep 2
+# nohup su -s /bin/bash logstash -c '/usr/share/logstash/bin/logstash -f /etc/logstash/conf.d/web-access.conf --path.data /tmp/logstash-data' > /var/log/logstash/logstash-plain.log 2>&1 &
 
 # 5. ~30초 대기 후 인덱스 확인
 curl -s http://localhost:9200/_cat/indices?v
@@ -669,7 +690,7 @@ docker stop elk-manual && docker rm elk-manual
 | Kibana 설정 | `/etc/kibana/kibana.yml` | root (편집) | `elasticsearch.hosts` |
 | Logstash 설치 | `apt install logstash` | root | `/usr/share/logstash/bin/logstash --version` |
 | Logstash 소유권 | `chown -R logstash:logstash /etc/logstash /var/log/logstash /usr/share/logstash` | root | - |
-| Logstash 시작 | `su -s /bin/bash logstash -c '...logstash -f ... &'` | **logstash** | `Pipeline started` |
+| Logstash 시작 | `nohup su -s /bin/bash logstash -c '...logstash -f ...' > log 2>&1 &` | **logstash** | `Pipeline started` |
 | Logstash 설정 | `/etc/logstash/conf.d/*.conf` | root (편집) | `--config.test_and_exit` |
 | Filebeat 설치 | `apt install filebeat` | root | `filebeat version` |
 | Filebeat 시작 | `filebeat -e -c /etc/filebeat/filebeat.yml &` | root (허용) | `Harvester started` |

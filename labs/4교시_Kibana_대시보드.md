@@ -130,7 +130,7 @@ HTTP 4xx/5xx 에러 발생 추이를 시계열로 시각화한다.
 5. Vertical axis 필터에 아래 KQL 입력:
 
 ```
-response >= 400
+http.response.status_code >= 400
 ```
 
 6. 제목을 `Error Rate Timeline`으로 설정하고 **Save and return**
@@ -176,7 +176,7 @@ response >= 400
 3. 필터 추가 (KQL):
 
 ```
-response >= 400
+http.response.status_code >= 400
 ```
 
 4. 제목: `Top 10 공격 IP`로 저장
@@ -210,7 +210,7 @@ response >= 400
 
 1. **Create visualization** > Lens > **Pie**
 2. 설정:
-   - **Slice by**: `response` 필드 (Terms aggregation, Top 10)
+   - **Slice by**: `http.response.status_code` 필드 (Terms aggregation, Top 10)
    - **Size by**: Count
 
 3. 제목: `HTTP 상태 코드 분포`로 저장
@@ -229,7 +229,7 @@ response >= 400
 4. 필터 추가:
 
 ```
-response >= 400
+http.response.status_code >= 400
 ```
 
 5. 스타일 설정:
@@ -280,7 +280,7 @@ response >= 400
 - Filter (KQL):
 
 ```
-response >= 200 AND response < 300
+http.response.status_code >= 200 AND http.response.status_code < 300
 ```
 
 **시리즈 2 - 공격 트래픽:**
@@ -290,7 +290,7 @@ response >= 200 AND response < 300
 - Filter (KQL):
 
 ```
-response >= 400
+http.response.status_code >= 400
 ```
 
 4. **Options** 탭에서 색상 지정:

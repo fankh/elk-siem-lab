@@ -74,12 +74,13 @@ Sigma Rule을 SIEM 제품별 쿼리로 변환하는 CLI 도구입니다.
 python3 -m venv venv
 source venv/bin/activate    # Windows: venv\Scripts\activate
 
-# sigma-cli + Elasticsearch 백엔드 설치
-pip install sigma-cli pySigma-backend-elasticsearch
-
+# tools 컨테이너에는 sigma-cli가 사전 설치되어 있습니다
 # 설치 확인
 sigma version
 # 기대: pySigma version x.x.x
+
+# 미설치 시 수동 설치:
+# pip install sigma-cli pySigma-backend-elasticsearch
 ```
 
 ### 주요 패키지
@@ -94,10 +95,10 @@ sigma version
 ```bash
 # tools 컨테이너 내부에서 실행 (docker exec -it tools bash)
 # 단일 룰 변환 → ES Query DSL
-sigma convert -t lucene --without-pipeline sigma-rules/sqli-detection.yml
+sigma convert -t lucene --without-pipeline /lab/sigma-rules/sqli-detection.yml
 
 # 전체 룰 변환
-sigma convert -t lucene --without-pipeline sigma-rules/
+sigma convert -t lucene --without-pipeline /lab/sigma-rules/
 
 # 지원 백엔드 목록
 sigma list targets
@@ -205,7 +206,7 @@ tags:
 
 ```bash
 # tools 컨테이너 내부에서 실행 (docker exec -it tools bash)
-cat sigma-rules/sqli-detection.yml
+cat /lab/sigma-rules/sqli-detection.yml
 ```
 
 ### 핵심 분석 포인트
@@ -250,7 +251,7 @@ detection:
 
 ```bash
 # tools 컨테이너 내부에서 실행 (docker exec -it tools bash)
-cat sigma-rules/xss-detection.yml
+cat /lab/sigma-rules/xss-detection.yml
 ```
 
 ### XSS 탐지 핵심 패턴
@@ -329,7 +330,7 @@ Sigma는 `count()` 함수와 `timeframe`을 사용하여 임계값 기반 탐지
 
 ```yaml
 title: Web Login Brute Force Detection
-id: a]f7e8d2-1234-5678-9abc-def012345678
+id: a0f7e8d2-1234-5678-9abc-def012345678
 status: experimental
 level: high
 description: 동일 IP에서 짧은 시간 내 다수의 로그인 실패 탐지
@@ -375,8 +376,9 @@ tags:
 
 ```bash
 # tools 컨테이너 내부에서 실행 (docker exec -it tools bash)
-pip install sigma-cli
-pip install pySigma-backend-elasticsearch
+# tools 컨테이너에는 sigma-cli가 사전 설치되어 있습니다
+sigma version
+# 미설치 시: pip install sigma-cli pySigma-backend-elasticsearch
 ```
 
 ### 변환 명령
@@ -384,16 +386,16 @@ pip install pySigma-backend-elasticsearch
 ```bash
 # tools 컨테이너 내부에서 실행 (docker exec -it tools bash)
 # SQLi 탐지 룰 변환
-sigma convert -t lucene --without-pipeline sigma-rules/sqli-detection.yml
+sigma convert -t lucene --without-pipeline /lab/sigma-rules/sqli-detection.yml
 
 # XSS 탐지 룰 변환
-sigma convert -t lucene --without-pipeline sigma-rules/xss-detection.yml
+sigma convert -t lucene --without-pipeline /lab/sigma-rules/xss-detection.yml
 
 # 출력 형식 지정 (lucene 쿼리)
-sigma convert -t lucene --without-pipeline -f lucene sigma-rules/sqli-detection.yml
+sigma convert -t lucene --without-pipeline -f lucene /lab/sigma-rules/sqli-detection.yml
 
 # DSL 쿼리 형식 출력
-sigma convert -t lucene --without-pipeline -f dsl_lucene sigma-rules/sqli-detection.yml
+sigma convert -t lucene --without-pipeline -f dsl_lucene /lab/sigma-rules/sqli-detection.yml
 ```
 
 ### 변환 결과 예시 (DSL)
@@ -403,15 +405,24 @@ sigma convert -t lucene --without-pipeline -f dsl_lucene sigma-rules/sqli-detect
   "query": {
     "bool": {
       "should": [
-        { "wildcard": { "url.query": "*UNION SELECT*" } },
-        { "wildcard": { "url.query": "*OR 1=1*" } },
-        { "wildcard": { "url.query": "*DROP TABLE*" } }
+        { "wildcard": { "url.path_decoded": "*UNION SELECT*" } },
+        { "wildcard": { "url.path_decoded": "*OR 1=1*" } },
+        { "wildcard": { "url.path_decoded": "*DROP TABLE*" } }
       ],
       "minimum_should_match": 1
     }
   }
 }
 ```
+
+> **⚠️ 필드 매핑 주의**: Sigma 변환 결과의 필드명과 실제 ES 인덱스 필드명이 다릅니다. 실행 전 반드시 아래 표를 참고하여 수정하세요.
+>
+> | Sigma / 변환 결과 필드 | 실제 ES 필드 (`security-web-*`) | 설명 |
+> |---|---|---|
+> | `cs-uri-query` | `url.path_decoded` | URL 디코딩된 요청 경로 (공격 탐지용) |
+> | `cs-uri-stem` | `url.path` | 요청 경로 원본 |
+> | `sc-status` | `http.response.status_code` | HTTP 상태 코드 |
+> | `c-ip` | `source.ip` | 클라이언트 IP |
 
 ### 5-3. 변환 결과 상세 분석
 
@@ -453,7 +464,7 @@ pip install pySigma-backend-elasticsearch
 # → 해당 modifier를 |contains 등으로 대체
 
 # 변환 디버그 모드
-sigma convert -t lucene --without-pipeline --debug sigma-rules/sqli-detection.yml
+sigma convert -t lucene --without-pipeline --debug /lab/sigma-rules/sqli-detection.yml
 ```
 
 ---
@@ -464,15 +475,15 @@ sigma convert -t lucene --without-pipeline --debug sigma-rules/sqli-detection.ym
 2. 변환된 쿼리를 아래 형식으로 실행:
 
 ```json
-GET /web-logs-*/_search
+GET /security-web-*/_search
 {
   "query": {
     "bool": {
       "should": [
-        { "wildcard": { "url.query": "*UNION SELECT*" } },
-        { "wildcard": { "url.query": "*OR 1=1*" } },
-        { "wildcard": { "url.query": "*' OR '*" } },
-        { "wildcard": { "url.query": "*DROP TABLE*" } }
+        { "wildcard": { "url.path_decoded": "*UNION SELECT*" } },
+        { "wildcard": { "url.path_decoded": "*OR 1=1*" } },
+        { "wildcard": { "url.path_decoded": "*' OR '*" } },
+        { "wildcard": { "url.path_decoded": "*DROP TABLE*" } }
       ],
       "minimum_should_match": 1
     }
@@ -512,7 +523,7 @@ PUT _watcher/watch/sqli-detection
   "input": {
     "search": {
       "request": {
-        "indices": ["web-logs-*"],
+        "indices": ["security-web-*"],
         "body": {
           "query": {
             "bool": {
@@ -520,9 +531,9 @@ PUT _watcher/watch/sqli-detection
                 {
                   "bool": {
                     "should": [
-                      { "wildcard": { "url.query": "*UNION SELECT*" } },
-                      { "wildcard": { "url.query": "*OR 1=1*" } },
-                      { "wildcard": { "url.query": "*DROP TABLE*" } }
+                      { "wildcard": { "url.path_decoded": "*UNION SELECT*" } },
+                      { "wildcard": { "url.path_decoded": "*OR 1=1*" } },
+                      { "wildcard": { "url.path_decoded": "*DROP TABLE*" } }
                     ],
                     "minimum_should_match": 1
                   }
@@ -543,7 +554,7 @@ PUT _watcher/watch/sqli-detection
   },
   "condition": {
     "compare": {
-      "ctx.payload.hits.total": {
+      "ctx.payload.hits.total.value": {
         "gt": 0
       }
     }
@@ -551,7 +562,7 @@ PUT _watcher/watch/sqli-detection
   "actions": {
     "log_alert": {
       "logging": {
-        "text": "[SQLi Alert] {{ctx.payload.hits.total}} SQL Injection attempts detected in the last 1 minute"
+        "text": "[SQLi Alert] {{ctx.payload.hits.total.value}} SQL Injection attempts detected in the last 1 minute"
       }
     }
   }
