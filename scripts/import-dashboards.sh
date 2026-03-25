@@ -1,6 +1,6 @@
 #!/bin/bash
 # Import Kibana dashboards and index patterns
-KIBANA_URL="${KIBANA_URL:-http://localhost:5601}"
+KIBANA_URL="${KIBANA_URL:-http://kibana:5601}"
 
 echo "=== ELK SIEM Lab Setup ==="
 
@@ -51,4 +51,4 @@ for obj in data.get('saved_objects', []):
 echo ""
 echo "=== Setup Complete ==="
 echo "Kibana: $KIBANA_URL"
-echo "Elasticsearch: http://localhost:9200"
+echo "Elasticsearch: http://elasticsearch:9200"

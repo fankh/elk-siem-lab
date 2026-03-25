@@ -1,0 +1,5 @@
+# Force LF line endings for shell scripts (required for Linux containers)
+*.sh text eol=lf
+*.py text eol=lf
+*.yml text eol=lf
+*.conf text eol=lf

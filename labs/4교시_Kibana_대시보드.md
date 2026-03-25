@@ -44,9 +44,8 @@ exit
 docker exec -it tools bash
 cat /lab/scripts/import-dashboards.sh
 
-# 호스트에서 — 대시보드 import 실행
-# Git Bash 또는 WSL에서 실행
-bash scripts/import-dashboards.sh
+# tools 컨테이너 내부에서 — 대시보드 import 실행
+bash /lab/scripts/import-dashboards.sh
 
 # tools 컨테이너 — ES에서 인덱스 패턴/집계 데이터 확인
 docker exec -it tools bash
@@ -94,9 +93,8 @@ URL: http://localhost:5601
 
 또는 스크립트로 자동 생성:
 ```bash
-# 호스트에서 실행 (elk-siem-lab 디렉토리에서)
-# Git Bash 또는 WSL에서 실행
-bash scripts/import-dashboards.sh
+# tools 컨테이너 내부에서 실행 (docker exec -it tools bash)
+bash /lab/scripts/import-dashboards.sh
 ```
 
 ### Lens 시각화 유형
