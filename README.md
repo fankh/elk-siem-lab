@@ -234,6 +234,9 @@ head -3 /var/log/sample/suricata-eve.json
 # 수집 레지스트리 확인 (어디까지 읽었는지)
 cat /usr/share/filebeat/data/registry/filebeat/log.json | head -20
 
+# 설정 파일 권한 수정 (Filebeat는 소유자만 쓰기 가능해야 함)
+chmod go-w /usr/share/filebeat/filebeat.yml
+
 # 설정 검증
 filebeat test config
 filebeat test output
