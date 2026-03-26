@@ -256,9 +256,6 @@ server.host: "0.0.0.0"
 
 # Elasticsearch 연결
 elasticsearch.hosts: ["http://localhost:9200"]
-
-# 보안 비활성화
-xpack.security.enabled: false
 EOF
 ```
 

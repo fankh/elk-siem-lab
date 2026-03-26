@@ -387,80 +387,70 @@ sigma version
 
 ```bash
 # tools 컨테이너 내부에서 실행 (docker exec -it tools bash)
-# SQLi 탐지 룰 변환
+# SQLi 탐지 룰 변환 (Lucene 쿼리 문자열 출력)
 sigma convert -t lucene --without-pipeline /lab/sigma-rules/sqli-detection.yml
 
 # XSS 탐지 룰 변환
 sigma convert -t lucene --without-pipeline /lab/sigma-rules/xss-detection.yml
 
-# 출력 형식 지정 (plain lucene 쿼리, default)
-sigma convert -t lucene --without-pipeline -f default /lab/sigma-rules/sqli-detection.yml
-
-# DSL 쿼리 형식 출력
-sigma convert -t lucene --without-pipeline -f dsl_lucene /lab/sigma-rules/sqli-detection.yml
-
 # 사용 가능한 출력 형식 확인
 sigma list formats lucene
+# default, dsl_lucene, kibana_ndjson, siem_rule, siem_rule_ndjson
 ```
 
-### 변환 결과 예시 (DSL)
+### 변환 결과 확인
 
-sigma-cli 변환 결과는 Sigma 필드명을 그대로 사용합니다. **이 쿼리를 그대로 실행하면 결과가 0건**입니다:
-
-```json
-// ❌ sigma 변환 원본 — cs-uri-query 필드가 ES에 존재하지 않음
-{
-  "query": {
-    "bool": {
-      "should": [
-        {"wildcard": {"cs-uri-query": {"value": "*' OR *"}}},
-        {"wildcard": {"cs-uri-query": {"value": "*UNION SELECT*"}}},
-        {"wildcard": {"cs-uri-query": {"value": "*1=1*"}}},
-        {"wildcard": {"cs-uri-query": {"value": "*DROP TABLE*"}}},
-        {"wildcard": {"cs-uri-query": {"value": "*SLEEP(*"}}},
-        {"wildcard": {"cs-uri-query": {"value": "*information_schema*"}}}
-      ],
-      "minimum_should_match": 1
-    }
-  }
-}
+```
+# 실행 결과 예시
+cs-uri-query:(*' OR * OR *UNION SELECT* OR *1=1* OR *DROP TABLE* OR *SLEEP(* ...)
 ```
 
-> **⚠️ 필드 매핑 필수**: Sigma 변환 결과의 필드명과 실제 ES 인덱스 필드명이 다릅니다.
-> `--without-pipeline` 옵션은 필드 매핑 없이 변환하므로, 실행 전 반드시 아래 표를 참고하여 수정하세요.
+> **⚠️ 중요: 변환 결과를 그대로 사용할 수 없습니다!**
 >
-> | Sigma 변환 결과 필드 | 실제 ES 필드 (`security-web-*`) | 설명 |
-> |---|---|---|
-> | `cs-uri-query` | `url.path_decoded.keyword` | URL 디코딩된 요청 경로 (wildcard 쿼리 시 `.keyword` 필수) |
-> | `cs-uri-stem` | `url.path` | 요청 경로 원본 |
-> | `sc-status` | `http.response.status_code` | HTTP 상태 코드 |
-> | `c-ip` | `source.ip` | 클라이언트 IP |
+> `--without-pipeline` 옵션은 Sigma의 **원본 필드명**(`cs-uri-query`)을 그대로 출력합니다.
+> 이 필드는 우리 ES 인덱스에 존재하지 않으므로, 실행하면 **결과가 0건**입니다.
 >
+> sigma-cli의 변환 결과는 **탐지 로직(어떤 패턴을 찾을지)**을 확인하는 용도로 사용하고,
+> 실제 ES에서 실행할 쿼리는 아래 필드 매핑 표를 참고하여 **직접 작성**해야 합니다.
+
+### 5-3. 필드 매핑 표
+
+| Sigma 변환 결과 필드 | 실제 ES 필드 (`security-web-*`) | 설명 |
+|---|---|---|
+| `cs-uri-query` | `url.path_decoded.keyword` | URL 디코딩된 요청 경로 (wildcard 쿼리 시 `.keyword` 필수) |
+| `cs-uri-stem`, `cs-uri` | `url.path` | 요청 경로 원본 |
+| `sc-status` | `http.response.status_code` | HTTP 상태 코드 |
+| `c-ip` | `source.ip` | 클라이언트 IP |
+
 > **왜 `.keyword`가 필요한가?** `url.path_decoded`는 `text` 타입으로 토큰화(tokenize)되어 저장됩니다.
 > wildcard 쿼리는 토큰화된 텀을 검색하므로 `*UNION SELECT*` 같은 원본 문자열 매칭이 실패합니다.
 > `.keyword` 서브필드는 원본 문자열 그대로 저장되므로 wildcard 매칭이 정상 동작합니다.
 
-### 5-3. 필드 매핑 적용 후 쿼리
+### 5-4. 필드 매핑 적용 — 실제 ES 쿼리
 
-위 변환 결과에서 필드명을 실제 ES 필드로 수정한 쿼리:
+sigma 변환 로직을 참고하여 필드명을 매핑한 쿼리입니다. Kibana Dev Tools에서 바로 실행 가능합니다:
 
 ```json
-// ✅ 필드 매핑 적용 — 실제 ES에서 동작하는 쿼리
+GET /security-web-*/_search
 {
   "query": {
     "bool": {
       "should": [
         { "wildcard": { "url.path_decoded.keyword": "*UNION SELECT*" } },
         { "wildcard": { "url.path_decoded.keyword": "*OR 1=1*" } },
-        { "wildcard": { "url.path_decoded.keyword": "*DROP TABLE*" } }
+        { "wildcard": { "url.path_decoded.keyword": "*DROP TABLE*" } },
+        { "wildcard": { "url.path_decoded.keyword": "*SLEEP(*" } },
+        { "wildcard": { "url.path_decoded.keyword": "*information_schema*" } }
       ],
       "minimum_should_match": 1
     }
-  }
+  },
+  "size": 10,
+  "sort": [{ "@timestamp": "desc" }]
 }
 ```
 
-### 5-4. 변환 오류 해결
+### 5-5. 변환 오류 해결
 
 ```bash
 # tools 컨테이너 내부에서 실행 (docker exec -it tools bash)
