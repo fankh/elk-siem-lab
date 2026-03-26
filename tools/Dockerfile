@@ -9,7 +9,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN pip install --no-cache-dir \
     sigma-cli \
     pySigma-backend-elasticsearch \
-    requests
+    requests \
+    pandas \
+    scikit-learn \
+    tabulate
 
 WORKDIR /lab
 

@@ -52,8 +52,10 @@ for rule in /lab/sigma-rules/*.yml; do
     sigma convert -t lucene --without-pipeline "$rule"
     echo ""
 done
+```
 
-# 호스트에서 — Sigma 룰 파일 직접 읽기
+```powershell
+# 호스트(Windows)에서 — Sigma 룰 파일 직접 읽기
 type sigma-rules\sqli-detection.yml
 type sigma-rules\xss-detection.yml
 type sigma-rules\bruteforce-detection.yml
@@ -391,44 +393,22 @@ sigma convert -t lucene --without-pipeline /lab/sigma-rules/sqli-detection.yml
 # XSS 탐지 룰 변환
 sigma convert -t lucene --without-pipeline /lab/sigma-rules/xss-detection.yml
 
-# 출력 형식 지정 (lucene 쿼리)
-sigma convert -t lucene --without-pipeline -f lucene /lab/sigma-rules/sqli-detection.yml
+# 출력 형식 지정 (plain lucene 쿼리, default)
+sigma convert -t lucene --without-pipeline -f default /lab/sigma-rules/sqli-detection.yml
 
 # DSL 쿼리 형식 출력
 sigma convert -t lucene --without-pipeline -f dsl_lucene /lab/sigma-rules/sqli-detection.yml
+
+# 사용 가능한 출력 형식 확인
+sigma list formats lucene
 ```
 
 ### 변환 결과 예시 (DSL)
 
-```json
-{
-  "query": {
-    "bool": {
-      "should": [
-        { "wildcard": { "url.path_decoded": "*UNION SELECT*" } },
-        { "wildcard": { "url.path_decoded": "*OR 1=1*" } },
-        { "wildcard": { "url.path_decoded": "*DROP TABLE*" } }
-      ],
-      "minimum_should_match": 1
-    }
-  }
-}
-```
-
-> **⚠️ 필드 매핑 주의**: Sigma 변환 결과의 필드명과 실제 ES 인덱스 필드명이 다릅니다. 실행 전 반드시 아래 표를 참고하여 수정하세요.
->
-> | Sigma / 변환 결과 필드 | 실제 ES 필드 (`security-web-*`) | 설명 |
-> |---|---|---|
-> | `cs-uri-query` | `url.path_decoded` | URL 디코딩된 요청 경로 (공격 탐지용) |
-> | `cs-uri-stem` | `url.path` | 요청 경로 원본 |
-> | `sc-status` | `http.response.status_code` | HTTP 상태 코드 |
-> | `c-ip` | `source.ip` | 클라이언트 IP |
-
-### 5-3. 변환 결과 상세 분석
-
-**sqli-detection.yml 변환 결과:**
+sigma-cli 변환 결과는 Sigma 필드명을 그대로 사용합니다. **이 쿼리를 그대로 실행하면 결과가 0건**입니다:
 
 ```json
+// ❌ sigma 변환 원본 — cs-uri-query 필드가 ES에 존재하지 않음
 {
   "query": {
     "bool": {
@@ -446,7 +426,39 @@ sigma convert -t lucene --without-pipeline -f dsl_lucene /lab/sigma-rules/sqli-d
 }
 ```
 
-> **주의**: 변환된 필드명(`cs-uri-query`)이 실제 인덱스 필드명(`url.path`)과 다를 수 있습니다. 실행 전 필드명을 확인하고 수정하세요.
+> **⚠️ 필드 매핑 필수**: Sigma 변환 결과의 필드명과 실제 ES 인덱스 필드명이 다릅니다.
+> `--without-pipeline` 옵션은 필드 매핑 없이 변환하므로, 실행 전 반드시 아래 표를 참고하여 수정하세요.
+>
+> | Sigma 변환 결과 필드 | 실제 ES 필드 (`security-web-*`) | 설명 |
+> |---|---|---|
+> | `cs-uri-query` | `url.path_decoded.keyword` | URL 디코딩된 요청 경로 (wildcard 쿼리 시 `.keyword` 필수) |
+> | `cs-uri-stem` | `url.path` | 요청 경로 원본 |
+> | `sc-status` | `http.response.status_code` | HTTP 상태 코드 |
+> | `c-ip` | `source.ip` | 클라이언트 IP |
+>
+> **왜 `.keyword`가 필요한가?** `url.path_decoded`는 `text` 타입으로 토큰화(tokenize)되어 저장됩니다.
+> wildcard 쿼리는 토큰화된 텀을 검색하므로 `*UNION SELECT*` 같은 원본 문자열 매칭이 실패합니다.
+> `.keyword` 서브필드는 원본 문자열 그대로 저장되므로 wildcard 매칭이 정상 동작합니다.
+
+### 5-3. 필드 매핑 적용 후 쿼리
+
+위 변환 결과에서 필드명을 실제 ES 필드로 수정한 쿼리:
+
+```json
+// ✅ 필드 매핑 적용 — 실제 ES에서 동작하는 쿼리
+{
+  "query": {
+    "bool": {
+      "should": [
+        { "wildcard": { "url.path_decoded.keyword": "*UNION SELECT*" } },
+        { "wildcard": { "url.path_decoded.keyword": "*OR 1=1*" } },
+        { "wildcard": { "url.path_decoded.keyword": "*DROP TABLE*" } }
+      ],
+      "minimum_should_match": 1
+    }
+  }
+}
+```
 
 ### 5-4. 변환 오류 해결
 
@@ -480,10 +492,10 @@ GET /security-web-*/_search
   "query": {
     "bool": {
       "should": [
-        { "wildcard": { "url.path_decoded": "*UNION SELECT*" } },
-        { "wildcard": { "url.path_decoded": "*OR 1=1*" } },
-        { "wildcard": { "url.path_decoded": "*' OR '*" } },
-        { "wildcard": { "url.path_decoded": "*DROP TABLE*" } }
+        { "wildcard": { "url.path_decoded.keyword": "*UNION SELECT*" } },
+        { "wildcard": { "url.path_decoded.keyword": "*OR 1=1*" } },
+        { "wildcard": { "url.path_decoded.keyword": "*' OR '*" } },
+        { "wildcard": { "url.path_decoded.keyword": "*DROP TABLE*" } }
       ],
       "minimum_should_match": 1
     }
@@ -508,6 +520,12 @@ GET /security-web-*/_search
 
 변환된 쿼리를 Elasticsearch Watcher에 등록하여 자동 탐지를 구성한다.
 
+> **⚠️ 라이선스 요구사항**: Watcher는 Basic 라이선스에서 사용할 수 없습니다. 실습을 위해 Trial 라이선스를 활성화하세요:
+> ```json
+> POST _license/start_trial?acknowledge=true
+> ```
+> Trial은 30일간 유효하며, Watcher를 포함한 모든 Platinum 기능을 사용할 수 있습니다.
+
 ### Watcher 등록
 
 Kibana Dev Tools에서 실행:
@@ -531,9 +549,9 @@ PUT _watcher/watch/sqli-detection
                 {
                   "bool": {
                     "should": [
-                      { "wildcard": { "url.path_decoded": "*UNION SELECT*" } },
-                      { "wildcard": { "url.path_decoded": "*OR 1=1*" } },
-                      { "wildcard": { "url.path_decoded": "*DROP TABLE*" } }
+                      { "wildcard": { "url.path_decoded.keyword": "*UNION SELECT*" } },
+                      { "wildcard": { "url.path_decoded.keyword": "*OR 1=1*" } },
+                      { "wildcard": { "url.path_decoded.keyword": "*DROP TABLE*" } }
                     ],
                     "minimum_should_match": 1
                   }
